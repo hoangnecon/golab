@@ -1,0 +1,17 @@
+# Binaries
+golab
+
+# Docs
+docs/
+docs/*
+
+# OS Files
+.DS_Store
+
+# Go
+/vendor/
+
+# Python (Legacy)
+__pycache__/
+*.py[cod]
+*$py.class

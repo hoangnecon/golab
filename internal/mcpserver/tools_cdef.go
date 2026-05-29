@@ -2,9 +2,12 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -126,8 +129,6 @@ print(json.dumps({"written": path, "size": len(content)}))
 	return r, Empty{}, nil
 }
 
-
-
 // ── Group D — Context Management ─────────────────────
 
 func (s *Server) getNotebookOutline(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
@@ -176,8 +177,6 @@ func (s *Server) getNotebookOutline(ctx context.Context, req *mcp.CallToolReques
 	return r, Empty{}, nil
 }
 
-
-
 // ── Group E — Environment ────────────────────────────
 
 func (s *Server) getEnvironment(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
@@ -209,8 +208,6 @@ print(json.dumps(info))
 	return r, Empty{}, nil
 }
 
-
-
 type PackageNameInput struct {
 	PackageName string `json:"packageName" jsonschema:"Package name to check"`
 }
@@ -238,60 +235,207 @@ except ImportError:
 
 // ── Group F — Output Tracking ────────────────────────
 
-func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, input CellIDInput) (*mcp.CallToolResult, Empty, error) {
-	// Step 1: Lightweight fetch — get all cell IDs without outputs to find target index
-	cells, _, err := s.getAllCells(ctx, false)
+// GetCellOutputInput extends CellIDInput with an optional flag to include raw image data.
+type GetCellOutputInput struct {
+	CellID        string `json:"cellId" jsonschema:"Cell ID"`
+	IncludeImages bool   `json:"includeImages,omitempty" jsonschema:"If true, include raw base64 image data in response. Default false to save tokens."`
+}
+
+func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, input GetCellOutputInput) (*mcp.CallToolResult, Empty, error) {
+	cell, err := s.fetchCellWithOutputs(ctx, input.CellID)
 	if err != nil {
 		r, _ := errResult(err.Error())
 		return r, Empty{}, nil
 	}
 
+	stdout, errors, images := s.parseCellOutputs(cell)
+
+	resultMap := map[string]any{
+		"cellId":      cell.ID,
+		"hasOutput":   len(cell.Outputs) > 0,
+		"stdout":      stdout,
+		"errors":      errors,
+		"hasImages":   len(images) > 0,
+		"imageCount":  len(images),
+		"outputCount": len(cell.Outputs),
+	}
+
+	// Only include heavy base64 data when explicitly requested
+	if input.IncludeImages {
+		resultMap["images"] = images
+	}
+
+	r, _ := jsonResult(resultMap)
+	return r, Empty{}, nil
+}
+
+// SaveCellImagesInput defines the parameters for the save_cell_images tool.
+type SaveCellImagesInput struct {
+	CellID     string `json:"cellId" jsonschema:"Cell ID to extract images from"`
+	OutputDir  string `json:"outputDir,omitempty" jsonschema:"Local directory path to save images (absolute or relative to CWD). Defaults to './exports'."`
+	FilePrefix string `json:"filePrefix,omitempty" jsonschema:"Prefix for saved filenames. Default is the cellId."`
+}
+
+func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, input SaveCellImagesInput) (*mcp.CallToolResult, Empty, error) {
+	if input.OutputDir == "" {
+		input.OutputDir = "exports"
+	}
+
+	cell, err := s.fetchCellWithOutputs(ctx, input.CellID)
+	if err != nil {
+		r, _ := errResult(err.Error())
+		return r, Empty{}, nil
+	}
+
+	_, _, images := s.parseCellOutputs(cell)
+
+	if len(images) == 0 {
+		r, _ := jsonResult(map[string]any{
+			"cellId": input.CellID,
+			"saved":  0,
+			"files":  []string{},
+		})
+		return r, Empty{}, nil
+	}
+
+	// Create output directory
+	if err := os.MkdirAll(input.OutputDir, 0755); err != nil {
+		r, _ := errResult("failed to create output directory: " + err.Error())
+		return r, Empty{}, nil
+	}
+
+	prefix := input.FilePrefix
+	if prefix == "" {
+		prefix = input.CellID
+	}
+
+	var savedFiles []string
+	for i, img := range images {
+		b64Data, _ := img["data"].(string)
+		mimeType, _ := img["mimeType"].(string)
+		if b64Data == "" {
+			continue
+		}
+
+		// Determine file extension from MIME type
+		ext := ".png"
+		if strings.Contains(mimeType, "jpeg") || strings.Contains(mimeType, "jpg") {
+			ext = ".jpg"
+		}
+
+		// Decode base64
+		imgBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64Data))
+		if err != nil {
+			// Try with padding fix
+			imgBytes, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(b64Data))
+			if err != nil {
+				continue
+			}
+		}
+
+		// Generate MD5 hash of image content for de-duplication
+		hash := md5.Sum(imgBytes)
+		hashStr := fmt.Sprintf("%x", hash)[:8]
+
+		// Build filename
+		var filename string
+		if len(images) == 1 {
+			filename = fmt.Sprintf("%s_%s%s", prefix, hashStr, ext)
+		} else {
+			filename = fmt.Sprintf("%s_%d_%s%s", prefix, i+1, hashStr, ext)
+		}
+
+		fullPath := filepath.Join(input.OutputDir, filename)
+
+		// De-duplication: Skip writing if file with exact same content hash already exists
+		if _, err := os.Stat(fullPath); err == nil {
+			savedFiles = append(savedFiles, fullPath)
+			continue
+		}
+
+		// Write file
+		if err := os.WriteFile(fullPath, imgBytes, 0644); err != nil {
+			r, _ := errResult(fmt.Sprintf("failed to write %s: %s", filename, err.Error()))
+			return r, Empty{}, nil
+		}
+
+		savedFiles = append(savedFiles, fullPath)
+	}
+
+	r, _ := jsonResult(map[string]any{
+		"cellId": input.CellID,
+		"saved":  len(savedFiles),
+		"files":  savedFiles,
+	})
+	return r, Empty{}, nil
+}
+
+// ── Shared Cell Output Helpers ────────────────────────
+
+// cellWithOutputs is the parsed structure of a single cell with its outputs.
+type cellWithOutputs struct {
+	ID      string
+	Outputs []cellOutput
+}
+
+type cellOutput struct {
+	OutputType string         `json:"output_type"`
+	Text       []string       `json:"text"`
+	EName      string         `json:"ename"`
+	EValue     string         `json:"evalue"`
+	Traceback  []string       `json:"traceback"`
+	Data       map[string]any `json:"data"`
+}
+
+// fetchCellWithOutputs retrieves a single cell by ID with its outputs.
+func (s *Server) fetchCellWithOutputs(ctx context.Context, cellID string) (*cellWithOutputs, error) {
+	cells, _, err := s.getAllCells(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+
 	targetIdx := -1
 	for i, c := range cells {
-		if c.ID == input.CellID {
+		if c.ID == cellID {
 			targetIdx = i
 			break
 		}
 	}
 	if targetIdx == -1 {
-		r, _ := errResult("cell not found: " + input.CellID)
-		return r, Empty{}, nil
+		return nil, fmt.Errorf("cell not found: %s", cellID)
 	}
 
-	// Step 2: Targeted fetch — only the 1 cell we need, with outputs
 	raw, err := s.proxy.CallTool(ctx, "get_cells", map[string]any{
 		"cellIndexStart": targetIdx, "cellIndexEnd": targetIdx + 1, "includeOutputs": true,
 	})
 	if err != nil {
-		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return nil, err
 	}
 
 	result := extractProxyText(raw)
 	var resp struct {
 		Cells []struct {
-			ID      string `json:"id"`
-			Outputs []struct {
-				OutputType string            `json:"output_type"`
-				Text       []string          `json:"text"`
-				EName      string            `json:"ename"`
-				EValue     string            `json:"evalue"`
-				Traceback  []string          `json:"traceback"`
-				Data       map[string]any    `json:"data"`
-			} `json:"outputs"`
+			ID      string       `json:"id"`
+			Outputs []cellOutput `json:"outputs"`
 		} `json:"cells"`
 	}
 	json.Unmarshal(result, &resp)
 
 	if len(resp.Cells) == 0 {
-		r, _ := errResult("cell not found: " + input.CellID)
-		return r, Empty{}, nil
+		return nil, fmt.Errorf("cell not found: %s", cellID)
 	}
 
-	cell := resp.Cells[0]
+	return &cellWithOutputs{
+		ID:      resp.Cells[0].ID,
+		Outputs: resp.Cells[0].Outputs,
+	}, nil
+}
+
+// parseCellOutputs extracts stdout text, errors, and image data from cell outputs.
+func (s *Server) parseCellOutputs(cell *cellWithOutputs) (string, []map[string]any, []map[string]any) {
 	var stdout strings.Builder
 	var errors []map[string]any
-	hasImages := false
+	var images []map[string]any
 
 	for _, o := range cell.Outputs {
 		switch o.OutputType {
@@ -308,8 +452,26 @@ func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, in
 			errors = append(errors, errInfo)
 		case "display_data", "execute_result":
 			if o.Data != nil {
-				if _, ok := o.Data["image/png"]; ok {
-					hasImages = true
+				for _, mime := range []string{"image/png", "image/jpeg"} {
+					if imgData, ok := o.Data[mime]; ok {
+						var b64 string
+						switch v := imgData.(type) {
+						case string:
+							b64 = v
+						case []any:
+							var sb strings.Builder
+							for _, s := range v {
+								sb.WriteString(fmt.Sprintf("%v", s))
+							}
+							b64 = sb.String()
+						}
+						if b64 != "" {
+							images = append(images, map[string]any{
+								"mimeType": mime,
+								"data":     b64,
+							})
+						}
+					}
 				}
 				if textData, ok := o.Data["text/plain"]; ok {
 					if arr, ok := textData.([]any); ok {
@@ -324,15 +486,7 @@ func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, in
 		}
 	}
 
-	r, _ := jsonResult(map[string]any{
-		"cellId":      cell.ID,
-		"hasOutput":   len(cell.Outputs) > 0,
-		"stdout":      stdout.String(),
-		"errors":      errors,
-		"hasImages":   hasImages,
-		"outputCount": len(cell.Outputs),
-	})
-	return r, Empty{}, nil
+	return stdout.String(), errors, images
 }
 
 func (s *Server) getRunningCells(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {

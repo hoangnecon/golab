@@ -33,9 +33,9 @@ type JSONRPCError struct {
 
 // BrowserProxy sends JSON-RPC requests to the Colab browser and waits for responses.
 type BrowserProxy struct {
-	ws       *WSServer
-	nextID   atomic.Int64
-	pending  sync.Map // map[int64]chan *JSONRPCResponse
+	ws      *WSServer
+	nextID  atomic.Int64
+	pending sync.Map // map[int64]chan *JSONRPCResponse
 }
 
 func NewBrowserProxy(ws *WSServer) *BrowserProxy {

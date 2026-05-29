@@ -198,7 +198,6 @@ func (s *Server) runCodeCell(ctx context.Context, req *mcp.CallToolRequest, inpu
 		s.proxy.CallTool(callCtx, "run_code_cell", map[string]any{"cellId": input.CellID})
 	}()
 
-
 	r, _ := jsonResult(map[string]any{
 		"started": true,
 		"cellId":  input.CellID,
@@ -281,8 +280,6 @@ func (s *Server) findReplaceInCell(ctx context.Context, req *mcp.CallToolRequest
 	r, _ := errResult("cell not found: " + input.CellID)
 	return r, Empty{}, nil
 }
-
-
 
 type InsertInCellInput struct {
 	CellID     string `json:"cellId" jsonschema:"Cell ID"`

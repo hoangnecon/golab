@@ -88,7 +88,8 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{Name: "check_package", Description: "Check if a specific Python package is installed and its version."}, s.checkPackage)
 
 	// Group F — Output Tracking
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_cell_output", Description: "Get the output of a specific cell by ID. Returns text output, errors, and image data."}, s.getCellOutput)
+	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_cell_output", Description: "Get the output of a specific cell by ID. Returns text output, errors, and image data. Set includeImages=true to get raw base64 data (expensive). By default only returns hasImages boolean and imageCount."}, s.getCellOutput)
+	mcp.AddTool(s.mcp, &mcp.Tool{Name: "save_cell_images", Description: "Save images from a cell's output directly to local filesystem. Decodes base64 server-side and writes PNG/JPG files. Returns array of saved file paths. Use this instead of get_cell_output with includeImages=true to avoid sending large base64 data through the context."}, s.saveCellImages)
 	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_running_cells", Description: "Get a list of cells currently being executed."}, s.getRunningCells)
 	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_error_cells", Description: "Get cells that produced errors, with error type and message."}, s.getErrorCells)
 }

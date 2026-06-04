@@ -323,11 +323,16 @@ func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, i
 			ext = ".jpg"
 		}
 
+		// Clean base64 string: remove spaces and newlines which cause Go's decoder to fail
+		cleanB64 := strings.ReplaceAll(b64Data, "\n", "")
+		cleanB64 = strings.ReplaceAll(cleanB64, "\r", "")
+		cleanB64 = strings.TrimSpace(cleanB64)
+
 		// Decode base64
-		imgBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64Data))
+		imgBytes, err := base64.StdEncoding.DecodeString(cleanB64)
 		if err != nil {
 			// Try with padding fix
-			imgBytes, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(b64Data))
+			imgBytes, err = base64.RawStdEncoding.DecodeString(cleanB64)
 			if err != nil {
 				continue
 			}

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/gorilla/websocket"
 )
 
 var allowedOrigins = []string{
@@ -30,12 +30,14 @@ type ConnectionStatus struct {
 
 // WSServer accepts a single WebSocket connection from a Colab browser tab.
 type WSServer struct {
-	token       string
-	mu          sync.Mutex
-	conn        *websocket.Conn
+	token      string
+	mu         sync.Mutex
+	conn       *websocket.Conn
+	connCancel context.CancelFunc // cancel function for the active connection
+
 	connectedAt time.Time
 	remoteAddr  string
-	connected   chan struct{}
+	connected   chan struct{} // closed when a browser connects
 	server      *http.Server
 	listener    net.Listener
 	port        int
@@ -56,9 +58,8 @@ func NewWSServer(token string) *WSServer {
 // Start begins listening on the specified port (0 = random). Returns the actual port number.
 func (s *WSServer) Start(ctx context.Context, port int) (int, error) {
 	var err error
-	// Use explicit 127.0.0.1 instead of "localhost" — on Windows, localhost can
-	// resolve to ::1 (IPv6) while browser extensions connect via 127.0.0.1 (IPv4),
-	// causing silent connection failures.
+	// Use explicit 127.0.0.1 — on Windows, "localhost" can resolve to ::1 (IPv6)
+	// while browser extensions connect via 127.0.0.1 (IPv4).
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	s.listener, err = net.Listen("tcp4", addr)
 	if err != nil {
@@ -99,10 +100,7 @@ func (s *WSServer) DisconnectAndRotateToken(newToken string) {
 	if newToken != "" {
 		s.token = newToken
 	}
-
-	if s.conn != nil {
-		s.conn.Close(websocket.StatusPolicyViolation, "Token rotated")
-	}
+	s.closeActiveLocked()
 }
 
 // IsConnected returns true if a browser is connected.
@@ -135,110 +133,133 @@ func (s *WSServer) WaitConnected() <-chan struct{} {
 	return s.connected
 }
 
-func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	originOK := false
-	for _, allowed := range allowedOrigins {
-		if origin == allowed {
-			originOK = true
-			break
-		}
+// closeActiveLocked force-closes the active connection. Must hold s.mu.
+func (s *WSServer) closeActiveLocked() {
+	if s.connCancel != nil {
+		s.connCancel()
+		s.connCancel = nil
 	}
-	if !originOK {
-		http.Error(w, "forbidden origin", http.StatusForbidden)
-		return
+	if s.conn != nil {
+		s.conn.Close()
+		s.conn = nil
 	}
+	s.connectedAt = time.Time{}
+	s.remoteAddr = ""
+}
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		for _, allowed := range allowedOrigins {
+			if origin == allowed {
+				return true
+			}
+		}
+		return false
+	},
+	Subprotocols: []string{"mcp"},
+}
+
+func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	if !s.validateAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// If an old connection exists, force-close it instead of rejecting the new one.
-	// This handles stale connections where the browser was closed but TCP hasn't
-	// detected the disconnect yet (common on Windows).
-	s.mu.Lock()
-	if s.conn != nil {
-		oldConn := s.conn
-		s.conn = nil
-		s.mu.Unlock()
-		oldConn.Close(websocket.StatusPolicyViolation, "replaced by new connection")
-		log.Println("Force-closed stale browser connection")
-		time.Sleep(100 * time.Millisecond)
-	} else {
-		s.mu.Unlock()
-	}
-
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		Subprotocols:   []string{"mcp"},
-		OriginPatterns: []string{"colab.research.google.com", "colab.google.com"},
-	})
+	// Upgrade HTTP to WebSocket — gorilla/websocket does NOT depend on r.Context()
+	// after upgrade, so this works reliably on Windows.
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WS accept error: %v", err)
+		log.Printf("WS upgrade error: %v", err)
 		return
 	}
-	conn.SetReadLimit(10 * 1024 * 1024)
+	conn.SetReadLimit(10 * 1024 * 1024) // 10MB
 
+	// Create a per-connection context for clean shutdown.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Replace any existing connection — force-close it cleanly.
 	s.mu.Lock()
+	if s.conn != nil {
+		log.Println("Force-closing stale browser connection")
+		s.closeActiveLocked()
+	}
 	s.conn = conn
+	s.connCancel = cancel
 	s.connectedAt = time.Now()
 	s.remoteAddr = r.RemoteAddr
-	// Signal that a browser has connected
+
+	// Signal WaitConnected() callers.
 	ch := s.connected
 	s.connected = make(chan struct{})
 	s.mu.Unlock()
-
-	// Close the channel to unblock anyone waiting on WaitConnected()
 	close(ch)
 
 	log.Println("Colab browser connected")
 
-	// Use a self-managed context instead of r.Context(). On Windows, the HTTP
-	// server can cancel r.Context() immediately after WebSocket upgrade, causing
-	// both read/write goroutines to exit and the connection to drop instantly.
-	ctx, cancel := context.WithCancel(context.Background())
+	// --- Cleanup on exit ---
 	defer func() {
 		cancel()
 		s.mu.Lock()
-		// Only clear if we're still the active connection (not already replaced)
-		if s.conn == conn {
+		if s.conn == conn { // Only clear if we're still the active connection
 			s.conn = nil
+			s.connCancel = nil
 			s.connectedAt = time.Time{}
 			s.remoteAddr = ""
 		}
 		s.mu.Unlock()
-		conn.Close(websocket.StatusNormalClosure, "bye")
+		conn.Close()
 		log.Println("Colab browser disconnected")
 	}()
 
+	// --- Ping/Pong keepalive ---
+	// Detect dead connections within 45s (ping every 30s, pong deadline 45s).
+	conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+		return nil
+	})
+
 	var wg sync.WaitGroup
 
+	// Writer goroutine: sends messages to browser + ping keepalive.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer cancel() // When read fails (browser closed), cancel ctx to stop writer too
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 		for {
-			_, data, err := conn.Read(ctx)
-			if err != nil {
-				return
-			}
 			select {
-			case s.FromBrowser <- json.RawMessage(data):
+			case msg := <-s.ToBrowser:
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
+			case <-ticker.C:
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
+	// Reader goroutine: reads messages from browser.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer cancel() // When read fails (browser closed), cancel ctx to stop writer.
 		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
 			select {
-			case msg := <-s.ToBrowser:
-				if err := conn.Write(ctx, websocket.MessageText, msg); err != nil {
-					return
-				}
+			case s.FromBrowser <- json.RawMessage(data):
 			case <-ctx.Done():
 				return
 			}
@@ -270,4 +291,3 @@ func (s *WSServer) validateAuth(r *http.Request) bool {
 func (s *WSServer) SendToBrowser(msg json.RawMessage) {
 	s.ToBrowser <- msg
 }
-

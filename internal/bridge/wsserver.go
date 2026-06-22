@@ -14,6 +14,11 @@ import (
 	"nhooyr.io/websocket"
 )
 
+var allowedOrigins = []string{
+	"https://colab.research.google.com",
+	"https://colab.google.com",
+}
+
 // ConnectionStatus holds metadata about the current browser connection.
 type ConnectionStatus struct {
 	Connected   bool      `json:"connected"`
@@ -126,6 +131,19 @@ func (s *WSServer) WaitConnected() <-chan struct{} {
 }
 
 func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	originOK := false
+	for _, allowed := range allowedOrigins {
+		if origin == allowed {
+			originOK = true
+			break
+		}
+	}
+	if !originOK {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+
 	if !s.validateAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -140,10 +158,8 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Accept all origins. Security is handled by per-session access_token
-		// and binding to localhost only. Different Google accounts can route
-		// to different Colab domains, so we cannot whitelist origins.
-		InsecureSkipVerify: true,
+		Subprotocols:   []string{"mcp"},
+		OriginPatterns: []string{"colab.research.google.com", "colab.google.com"},
 	})
 	if err != nil {
 		log.Printf("WS accept error: %v", err)

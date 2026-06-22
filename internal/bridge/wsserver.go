@@ -56,12 +56,15 @@ func NewWSServer(token string) *WSServer {
 // Start begins listening on the specified port (0 = random). Returns the actual port number.
 func (s *WSServer) Start(ctx context.Context, port int) (int, error) {
 	var err error
-	addr := fmt.Sprintf("localhost:%d", port)
-	s.listener, err = net.Listen("tcp", addr)
+	// Use explicit 127.0.0.1 instead of "localhost" — on Windows, localhost can
+	// resolve to ::1 (IPv6) while browser extensions connect via 127.0.0.1 (IPv4),
+	// causing silent connection failures.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	s.listener, err = net.Listen("tcp4", addr)
 	if err != nil {
 		if port != 0 {
 			log.Printf("Port %d in use, falling back to random port", port)
-			s.listener, err = net.Listen("tcp", "localhost:0")
+			s.listener, err = net.Listen("tcp4", "127.0.0.1:0")
 		}
 		if err != nil {
 			return 0, fmt.Errorf("listen: %w", err)

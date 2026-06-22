@@ -14,11 +14,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var allowedOrigins = []string{
-	"https://colab.research.google.com",
-	"https://colab.google.com",
-}
-
 // ConnectionStatus holds metadata about the current browser connection.
 type ConnectionStatus struct {
 	Connected   bool      `json:"connected"`
@@ -159,16 +154,12 @@ func (s *WSServer) closeActiveLocked() {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		for _, allowed := range allowedOrigins {
-			if origin == allowed {
-				return true
-			}
-		}
-		return false
-	},
-	Subprotocols: []string{"mcp"},
+	// Allow all origins. Security is handled by:
+	// 1. Listening on 127.0.0.1 only (no external access)
+	// 2. Per-session random access_token in the URL
+	// Origin whitelisting broke connections from different Colab domains
+	// (colab.google.com vs colab.research.google.com) depending on Chrome profile.
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {

@@ -195,6 +195,33 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		log.Println("Force-closing stale browser connection")
 		s.closeActiveLocked()
 	}
+
+	// Drain stale messages from previous sessions. Without this, the writer
+	// goroutine sends old messages to the new browser, which causes Colab
+	// to close the connection immediately (wrong message IDs / unexpected data).
+	drainCount := 0
+	for {
+		select {
+		case <-s.ToBrowser:
+			drainCount++
+		default:
+			goto drained
+		}
+	}
+drained:
+	for {
+		select {
+		case <-s.FromBrowser:
+			drainCount++
+		default:
+			goto ready
+		}
+	}
+ready:
+	if drainCount > 0 {
+		log.Printf("Drained %d stale messages from channels", drainCount)
+	}
+
 	s.conn = conn
 	s.connCancel = cancel
 	s.connectedAt = time.Now()

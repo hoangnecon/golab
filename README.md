@@ -189,6 +189,25 @@ Instead of prompting in natural language, here is exactly how your AI Agent and 
 
 ---
 
+## ❓ Troubleshooting
+
+### Not getting the latest version?
+
+Go aggressively caches modules. If you're stuck on an old version:
+
+```bash
+# Option A: Add GOPROXY=direct to your MCP config env (recommended — see config above)
+
+# Option B: Clear Go's module cache manually
+go clean -modcache
+```
+
+### Windows: Browser opens but WebSocket never connects?
+
+Older versions of GoLab had a bug where Windows' `cmd /c start` treated the `&` character in the URL as a command separator, silently dropping the `mcpProxyPort` parameter. **Upgrade to v1.2.0+** to fix this. If you're already on latest and it still fails, ensure `GOPROXY=direct` is set in your config.
+
+---
+
 ## 🤝 Contributing & Issues
 
 We welcome community contributions to make GoLab even better! 

@@ -130,6 +130,8 @@ func (s *WSServer) Status() ConnectionStatus {
 
 // WaitConnected returns a channel that closes when a browser connects.
 func (s *WSServer) WaitConnected() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.connected
 }
 
@@ -152,13 +154,20 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If an old connection exists, force-close it instead of rejecting the new one.
+	// This handles stale connections where the browser was closed but TCP hasn't
+	// detected the disconnect yet (common on Windows).
 	s.mu.Lock()
 	if s.conn != nil {
+		oldConn := s.conn
+		s.conn = nil
 		s.mu.Unlock()
-		http.Error(w, "already connected", http.StatusConflict)
-		return
+		oldConn.Close(websocket.StatusPolicyViolation, "replaced by new connection")
+		log.Println("Force-closed stale browser connection")
+		time.Sleep(100 * time.Millisecond)
+	} else {
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:   []string{"mcp"},
@@ -174,25 +183,25 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.conn = conn
 	s.connectedAt = time.Now()
 	s.remoteAddr = r.RemoteAddr
+	// Signal that a browser has connected
+	ch := s.connected
+	s.connected = make(chan struct{})
 	s.mu.Unlock()
 
-	select {
-	case <-s.connected:
-		s.connected = make(chan struct{})
-		close(s.connected)
-	default:
-		close(s.connected)
-	}
+	// Close the channel to unblock anyone waiting on WaitConnected()
+	close(ch)
 
 	log.Println("Colab browser connected")
 
 	ctx := r.Context()
 	defer func() {
 		s.mu.Lock()
-		s.conn = nil
-		s.connectedAt = time.Time{}
-		s.remoteAddr = ""
-		s.connected = make(chan struct{})
+		// Only clear if we're still the active connection (not already replaced)
+		if s.conn == conn {
+			s.conn = nil
+			s.connectedAt = time.Time{}
+			s.remoteAddr = ""
+		}
 		s.mu.Unlock()
 		conn.Close(websocket.StatusNormalClosure, "bye")
 		log.Println("Colab browser disconnected")
@@ -256,3 +265,4 @@ func (s *WSServer) validateAuth(r *http.Request) bool {
 func (s *WSServer) SendToBrowser(msg json.RawMessage) {
 	s.ToBrowser <- msg
 }
+

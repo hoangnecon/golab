@@ -172,7 +172,11 @@ var upgrader = websocket.Upgrader{
 }
 
 func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[WS] incoming request from=%s origin=%q proto=%q query=%s",
+		r.RemoteAddr, r.Header.Get("Origin"), r.Header.Get("Sec-WebSocket-Protocol"), r.URL.RawQuery)
+
 	if !s.validateAuth(r) {
+		log.Printf("[WS] AUTH FAILED from=%s", r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -271,11 +275,13 @@ ready:
 			case msg := <-s.ToBrowser:
 				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					log.Printf("[WS] write error: %v", err)
 					return
 				}
 			case <-ticker.C:
 				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("[WS] ping error: %v", err)
 					return
 				}
 			case <-ctx.Done():
@@ -290,10 +296,12 @@ ready:
 		defer wg.Done()
 		defer cancel() // When read fails (browser closed), cancel ctx to stop writer.
 		for {
-			_, data, err := conn.ReadMessage()
+			msgType, data, err := conn.ReadMessage()
 			if err != nil {
+				log.Printf("[WS] read error: %v", err)
 				return
 			}
+			log.Printf("[WS] recv type=%d len=%d", msgType, len(data))
 			select {
 			case s.FromBrowser <- json.RawMessage(data):
 			case <-ctx.Done():

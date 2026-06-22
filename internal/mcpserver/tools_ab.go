@@ -34,9 +34,11 @@ func openBrowser(ctx context.Context, url string) error {
 	case "linux":
 		cmd = exec.CommandContext(ctx, "xdg-open", url)
 	case "windows":
-		// "start" treats & as a command separator. Must quote the URL.
-		// "start" requires a window title when the target is quoted: start "" "url"
-		cmd = exec.CommandContext(ctx, "cmd", "/c", "start", "", url)
+		// Bypass cmd.exe entirely — it treats & as command separator and Go's
+		// exec.Command does not auto-quote args containing &.
+		// rundll32 url.dll,FileProtocolHandler passes the URL directly to the
+		// default browser without any shell interpretation.
+		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", url)
 	default:
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}

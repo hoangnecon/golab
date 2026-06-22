@@ -193,8 +193,12 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Colab browser connected")
 
-	ctx := r.Context()
+	// Use a self-managed context instead of r.Context(). On Windows, the HTTP
+	// server can cancel r.Context() immediately after WebSocket upgrade, causing
+	// both read/write goroutines to exit and the connection to drop instantly.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
+		cancel()
 		s.mu.Lock()
 		// Only clear if we're still the active connection (not already replaced)
 		if s.conn == conn {
@@ -212,6 +216,7 @@ func (s *WSServer) handleWS(w http.ResponseWriter, r *http.Request) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer cancel() // When read fails (browser closed), cancel ctx to stop writer too
 		for {
 			_, data, err := conn.Read(ctx)
 			if err != nil {

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -34,11 +35,27 @@ func openBrowser(ctx context.Context, url string) error {
 	case "linux":
 		cmd = exec.CommandContext(ctx, "xdg-open", url)
 	case "windows":
-		// Bypass cmd.exe entirely — it treats & as command separator and Go's
-		// exec.Command does not auto-quote args containing &.
-		// rundll32 url.dll,FileProtocolHandler passes the URL directly to the
-		// default browser without any shell interpretation.
-		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", url)
+		// Windows shell (cmd.exe, rundll32) can strip URL fragments (#) or
+		// split on & characters. Writing the URL to a .url Internet Shortcut
+		// file bypasses all command-line parsing entirely — the OS reads
+		// the full URL from the file, preserving every character.
+		f, err := os.CreateTemp("", "golab-*.url")
+		if err != nil {
+			return fmt.Errorf("failed to create temp shortcut: %w", err)
+		}
+		name := f.Name()
+		fmt.Fprintf(f, "[InternetShortcut]\nURL=%s\n", url)
+		f.Close()
+
+		cmd = exec.CommandContext(ctx, "cmd", "/c", "start", "", name)
+		err = cmd.Run()
+
+		// Clean up temp file after browser has read it
+		go func() {
+			time.Sleep(5 * time.Second)
+			os.Remove(name)
+		}()
+		return err
 	default:
 		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}

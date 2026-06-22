@@ -61,15 +61,24 @@ func (s *WSServer) Start(ctx context.Context, port int) (int, error) {
 	// Use explicit 127.0.0.1 — on Windows, "localhost" can resolve to ::1 (IPv6)
 	// while browser extensions connect via 127.0.0.1 (IPv4).
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	s.listener, err = net.Listen("tcp4", addr)
+
+	if port != 0 {
+		// Configured port: retry a few times in case a previous GoLab is still
+		// shutting down. Do NOT fall back to a random port — that causes the
+		// browser to connect to the wrong port.
+		for i := 0; i < 5; i++ {
+			s.listener, err = net.Listen("tcp4", addr)
+			if err == nil {
+				break
+			}
+			log.Printf("Port %d in use, retrying in 500ms (%d/5)...", port, i+1)
+			time.Sleep(500 * time.Millisecond)
+		}
+	} else {
+		s.listener, err = net.Listen("tcp4", "127.0.0.1:0")
+	}
 	if err != nil {
-		if port != 0 {
-			log.Printf("Port %d in use, falling back to random port", port)
-			s.listener, err = net.Listen("tcp4", "127.0.0.1:0")
-		}
-		if err != nil {
-			return 0, fmt.Errorf("listen: %w", err)
-		}
+		return 0, fmt.Errorf("port %d is still in use after retries — kill the old GoLab process: %w", port, err)
 	}
 
 	mux := http.NewServeMux()

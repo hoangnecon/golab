@@ -115,6 +115,13 @@ func (s *Server) openNotebook(ctx context.Context, req *mcp.CallToolRequest, inp
 			"wsPort":  s.port,
 		})
 		return r, Empty{}, nil
+	case <-time.After(60 * time.Second):
+		r, _ := errResult("Timeout: no browser connection received within 60 seconds. Possible causes:\n" +
+			"1. The Colab page did not load the MCP proxy params from the URL hash.\n" +
+			"2. The browser blocked the WebSocket connection to localhost (check browser console).\n" +
+			"3. A firewall is blocking port " + fmt.Sprintf("%d", s.port) + ".\n" +
+			"4. Try opening the notebook URL manually and check the browser's developer console for errors.")
+		return r, Empty{}, nil
 	case <-ctx.Done():
 		r, _ := errResult("cancelled")
 		return r, Empty{}, nil

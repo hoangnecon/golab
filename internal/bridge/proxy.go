@@ -68,7 +68,10 @@ func (p *BrowserProxy) CallTool(ctx context.Context, toolName string, args map[s
 		"name":      toolName,
 		"arguments": args,
 	}
-	paramsJSON, _ := json.Marshal(params)
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("encode tool arguments as JSON: %w", err)
+	}
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -76,7 +79,10 @@ func (p *BrowserProxy) CallTool(ctx context.Context, toolName string, args map[s
 		Method:  "tools/call",
 		Params:  paramsJSON,
 	}
-	reqJSON, _ := json.Marshal(req)
+	reqJSON, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("encode JSON-RPC request: %w", err)
+	}
 
 	// Register pending response
 	ch := make(chan *JSONRPCResponse, 1)
@@ -91,6 +97,9 @@ func (p *BrowserProxy) CallTool(ctx context.Context, toolName string, args map[s
 	case resp := <-ch:
 		if resp.Error != nil {
 			return nil, fmt.Errorf("browser error: %s", resp.Error.Message)
+		}
+		if len(resp.Result) == 0 || !json.Valid(resp.Result) {
+			return nil, fmt.Errorf("browser returned an empty or invalid JSON result")
 		}
 		return resp.Result, nil
 	case <-ctx.Done():

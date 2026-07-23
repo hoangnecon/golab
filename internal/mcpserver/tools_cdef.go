@@ -21,7 +21,7 @@ type ListDriveInput struct {
 	MaxDepth int    `json:"maxDepth" jsonschema:"Max directory depth to list"`
 }
 
-func (s *Server) listDrive(ctx context.Context, req *mcp.CallToolRequest, input ListDriveInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) listDrive(ctx context.Context, req *mcp.CallToolRequest, input ListDriveInput) (*mcp.CallToolResult, any, error) {
 	path := input.Path
 	if path == "" {
 		path = "."
@@ -60,10 +60,10 @@ else:
 	output, err := s.runHiddenCell(ctx, code)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
-	r, _ := textResult(output)
-	return r, Empty{}, nil
+	r, _ := rawJSONResult(json.RawMessage(output))
+	return r, nil, nil
 }
 
 type ReadFileInput struct {
@@ -71,7 +71,7 @@ type ReadFileInput struct {
 	MaxLines int    `json:"maxLines" jsonschema:"Maximum lines to read"`
 }
 
-func (s *Server) readFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) readFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput) (*mcp.CallToolResult, any, error) {
 	maxLines := input.MaxLines
 	if maxLines <= 0 {
 		maxLines = 100
@@ -95,10 +95,10 @@ except Exception as e:
 	output, err := s.runHiddenCell(ctx, code)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
-	r, _ := textResult(output)
-	return r, Empty{}, nil
+	r, _ := rawJSONResult(json.RawMessage(output))
+	return r, nil, nil
 }
 
 type WriteFileInput struct {
@@ -106,7 +106,7 @@ type WriteFileInput struct {
 	Content string `json:"content" jsonschema:"File content to write"`
 }
 
-func (s *Server) writeFile(ctx context.Context, req *mcp.CallToolRequest, input WriteFileInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) writeFile(ctx context.Context, req *mcp.CallToolRequest, input WriteFileInput) (*mcp.CallToolResult, any, error) {
 	pathB64 := base64.StdEncoding.EncodeToString([]byte(input.Path))
 	contentB64 := base64.StdEncoding.EncodeToString([]byte(input.Content))
 	code := fmt.Sprintf(`import os, json, base64
@@ -123,19 +123,19 @@ print(json.dumps({"written": path, "size": len(content)}))
 	output, err := s.runHiddenCell(ctx, code)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
-	r, _ := textResult(output)
-	return r, Empty{}, nil
+	r, _ := rawJSONResult(json.RawMessage(output))
+	return r, nil, nil
 }
 
 // ── Group D — Context Management ─────────────────────
 
-func (s *Server) getNotebookOutline(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) getNotebookOutline(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	cells, _, err := s.getAllCells(ctx, false)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	var outline []map[string]any
@@ -174,12 +174,12 @@ func (s *Server) getNotebookOutline(ctx context.Context, req *mcp.CallToolReques
 		outline = append(outline, entry)
 	}
 	r, _ := jsonResult(outline)
-	return r, Empty{}, nil
+	return r, nil, nil
 }
 
 // ── Group E — Environment ────────────────────────────
 
-func (s *Server) getEnvironment(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) getEnvironment(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	code := `import json, sys, shutil
 info = {"python": sys.version.split()[0]}
 try:
@@ -202,17 +202,17 @@ print(json.dumps(info))
 	output, err := s.runHiddenCell(ctx, code)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
-	r, _ := textResult(output)
-	return r, Empty{}, nil
+	r, _ := rawJSONResult(json.RawMessage(output))
+	return r, nil, nil
 }
 
 type PackageNameInput struct {
 	PackageName string `json:"packageName" jsonschema:"Package name to check"`
 }
 
-func (s *Server) checkPackage(ctx context.Context, req *mcp.CallToolRequest, input PackageNameInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) checkPackage(ctx context.Context, req *mcp.CallToolRequest, input PackageNameInput) (*mcp.CallToolResult, any, error) {
 	nameB64 := base64.StdEncoding.EncodeToString([]byte(input.PackageName))
 	code := fmt.Sprintf(`import json, importlib, base64
 pkg = base64.b64decode('%s').decode()
@@ -227,10 +227,10 @@ except ImportError:
 	output, err := s.runHiddenCell(ctx, code)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
-	r, _ := textResult(output)
-	return r, Empty{}, nil
+	r, _ := rawJSONResult(json.RawMessage(output))
+	return r, nil, nil
 }
 
 // ── Group F — Output Tracking ────────────────────────
@@ -241,11 +241,11 @@ type GetCellOutputInput struct {
 	IncludeImages bool   `json:"includeImages,omitempty" jsonschema:"If true, include raw base64 image data in response. Default false to save tokens."`
 }
 
-func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, input GetCellOutputInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, input GetCellOutputInput) (*mcp.CallToolResult, any, error) {
 	cell, err := s.fetchCellWithOutputs(ctx, input.CellID)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	stdout, errors, images := s.parseCellOutputs(cell)
@@ -266,7 +266,7 @@ func (s *Server) getCellOutput(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 
 	r, _ := jsonResult(resultMap)
-	return r, Empty{}, nil
+	return r, nil, nil
 }
 
 // SaveCellImagesInput defines the parameters for the save_cell_images tool.
@@ -276,7 +276,7 @@ type SaveCellImagesInput struct {
 	FilePrefix string `json:"filePrefix,omitempty" jsonschema:"Prefix for saved filenames. Default is the cellId."`
 }
 
-func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, input SaveCellImagesInput) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, input SaveCellImagesInput) (*mcp.CallToolResult, any, error) {
 	if input.OutputDir == "" {
 		input.OutputDir = "exports"
 	}
@@ -284,7 +284,7 @@ func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, i
 	cell, err := s.fetchCellWithOutputs(ctx, input.CellID)
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	_, _, images := s.parseCellOutputs(cell)
@@ -295,13 +295,13 @@ func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, i
 			"saved":  0,
 			"files":  []string{},
 		})
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	// Create output directory
 	if err := os.MkdirAll(input.OutputDir, 0755); err != nil {
 		r, _ := errResult("failed to create output directory: " + err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	prefix := input.FilePrefix
@@ -361,7 +361,7 @@ func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, i
 		// Write file
 		if err := os.WriteFile(fullPath, imgBytes, 0644); err != nil {
 			r, _ := errResult(fmt.Sprintf("failed to write %s: %s", filename, err.Error()))
-			return r, Empty{}, nil
+			return r, nil, nil
 		}
 
 		savedFiles = append(savedFiles, fullPath)
@@ -372,7 +372,7 @@ func (s *Server) saveCellImages(ctx context.Context, req *mcp.CallToolRequest, i
 		"saved":  len(savedFiles),
 		"files":  savedFiles,
 	})
-	return r, Empty{}, nil
+	return r, nil, nil
 }
 
 // ── Shared Cell Output Helpers ────────────────────────
@@ -494,7 +494,7 @@ func (s *Server) parseCellOutputs(cell *cellWithOutputs) (string, []map[string]a
 	return stdout.String(), errors, images
 }
 
-func (s *Server) getRunningCells(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) getRunningCells(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	var running []map[string]any
 	s.runningCells.Range(func(key, value any) bool {
 		cellId := key.(string)
@@ -506,16 +506,16 @@ func (s *Server) getRunningCells(ctx context.Context, req *mcp.CallToolRequest, 
 		return true
 	})
 	r, _ := jsonResult(map[string]any{"running": running, "count": len(running)})
-	return r, Empty{}, nil
+	return r, nil, nil
 }
 
-func (s *Server) getErrorCells(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, Empty, error) {
+func (s *Server) getErrorCells(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
 	raw, err := s.proxy.CallTool(ctx, "get_cells", map[string]any{
 		"cellIndexStart": 0, "cellIndexEnd": 500, "includeOutputs": true,
 	})
 	if err != nil {
 		r, _ := errResult(err.Error())
-		return r, Empty{}, nil
+		return r, nil, nil
 	}
 
 	result := extractProxyText(raw)
@@ -548,5 +548,5 @@ func (s *Server) getErrorCells(ctx context.Context, req *mcp.CallToolRequest, in
 		}
 	}
 	r, _ := jsonResult(map[string]any{"errorCells": errors, "total": len(errors)})
-	return r, Empty{}, nil
+	return r, nil, nil
 }

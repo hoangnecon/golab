@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const Version = "v1.0.0"
+const Version = "v1.5.1"
 
 // Server wraps the MCP server with Colab browser proxy.
 type Server struct {
@@ -232,24 +232,55 @@ func (s *Server) getAllCells(ctx context.Context, includeOutputs bool) ([]cellIn
 
 // ── Result Helpers ───────────────────────────────────
 
-func textResult(text string) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}, nil
-}
-
 func jsonResult(v any) (*mcp.CallToolResult, error) {
-	data, err := json.MarshalIndent(v, "", "  ")
+	object := jsonObject(v)
+	data, err := json.Marshal(object)
 	if err != nil {
 		return nil, err
 	}
-	return textResult(string(data))
+	return &mcp.CallToolResult{
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		StructuredContent: object,
+	}, nil
+}
+
+// rawJSONResult converts a browser response into an MCP structured JSON result.
+// Colab may return either a direct JSON value or an MCP content envelope whose
+// text field contains JSON. Non-JSON text is kept in a JSON object as "value".
+func rawJSONResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
+	raw = extractProxyText(raw)
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		value = map[string]any{"value": string(raw)}
+	}
+	return jsonResult(value)
+}
+
+// jsonObject ensures structuredContent always satisfies the MCP requirement
+// that structured tool output is a JSON object.
+func jsonObject(v any) map[string]any {
+	if object, ok := v.(map[string]any); ok {
+		return object
+	}
+
+	data, err := json.Marshal(v)
+	if err == nil {
+		var object map[string]any
+		if json.Unmarshal(data, &object) == nil && object != nil {
+			return object
+		}
+	}
+	return map[string]any{"result": v}
 }
 
 func errResult(msg string) (*mcp.CallToolResult, error) {
+	object := map[string]any{"error": msg}
+	data, _ := json.Marshal(object)
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: "Error: " + msg}},
-		IsError: true,
+		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		StructuredContent: object,
+		IsError:           true,
 	}, nil
 }
 

@@ -35,6 +35,14 @@ func cleanColabPath(p string) string {
 	return strings.Join(escaped, "/")
 }
 
+func isDrivePath(cleaned string) bool {
+	return strings.HasPrefix(cleaned, "content/drive") || strings.HasPrefix(cleaned, "drive")
+}
+
+func unmountedDriveError(path string) error {
+	return fmt.Errorf("google drive is not mounted: path %q is inaccessible. Please mount Google Drive first by executing: from google.colab import drive; drive.mount('/content/drive')", path)
+}
+
 // ReadFile reads the full contents of a file on the Colab container. Format can be "text" or "base64".
 func (s *Service) ReadFile(ctx context.Context, filePath string, format string) (*FileReadResult, error) {
 	cleaned := cleanColabPath(filePath)
@@ -48,6 +56,9 @@ func (s *Service) ReadFile(ctx context.Context, filePath string, format string) 
 		return nil, fmt.Errorf("read file %q: %w", filePath, err)
 	}
 	if !resp.OK {
+		if resp.Status == 404 && isDrivePath(cleaned) {
+			return nil, unmountedDriveError(filePath)
+		}
 		return nil, fmt.Errorf("read file failed with status %d: %s", resp.Status, resp.RawText)
 	}
 
@@ -110,6 +121,9 @@ func (s *Service) WriteFile(ctx context.Context, filePath string, content string
 		return nil, fmt.Errorf("write file %q: %w", filePath, err)
 	}
 	if !resp.OK {
+		if resp.Status == 404 && isDrivePath(cleaned) {
+			return nil, unmountedDriveError(filePath)
+		}
 		return nil, fmt.Errorf("write file failed with status %d: %s", resp.Status, resp.RawText)
 	}
 
@@ -147,6 +161,9 @@ func (s *Service) ListDirectory(ctx context.Context, dirPath string) (*Directory
 		return nil, fmt.Errorf("list directory %q: %w", dirPath, err)
 	}
 	if !resp.OK {
+		if resp.Status == 404 && isDrivePath(cleaned) {
+			return nil, unmountedDriveError(dirPath)
+		}
 		return nil, fmt.Errorf("list directory failed with status %d: %s", resp.Status, resp.RawText)
 	}
 

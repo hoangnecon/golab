@@ -121,17 +121,17 @@ func (s *Server) registerTools() {
 	// Group 3 — Hardware & Environment Telemetry
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "colab_get_hardware_telemetry",
-		Description: "Retrieves instant hardware metrics in 2ms: Tesla GPU VRAM (used/free/total), GPU utilization, system RAM, and disk storage.",
+		Description: "Retrieves instant hardware telemetry in 2ms: Nvidia Tesla GPU VRAM (allocated, free, total in MB and bytes), GPU/memory utilization percentages, system host RAM, and disk storage. Non-blocking.",
 	}, s.colabGetHardwareTelemetry)
 
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "colab_get_build_info",
-		Description: "Retrieves Google Colab container image release tags and build metadata.",
+		Description: "Retrieves Google Colab container image release tags, build dates, and runtime environment metadata.",
 	}, s.colabGetBuildInfo)
 
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "colab_check_drive_status",
-		Description: "Checks Google Drive mount status and FUSE driver communication health.",
+		Description: "Checks whether Google Drive is currently mounted in this runtime (/content/drive). Returns mounted: true/false with explicit status and mounting instructions. Always check this before reading or writing to Google Drive to prevent file-not-found hallucinations.",
 	}, s.colabCheckDriveStatus)
 
 	// Group 4 — Linux PTY Terminals

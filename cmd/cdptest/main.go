@@ -68,24 +68,17 @@ func main() {
 				if (!kernel) return JSON.stringify({ error: "No kernel" });
 
 				try {
-					// Test PATCH /api/contents/content/test_dir
-					const patchRes = await kernel.getKernelXhr().fetch('/api/contents/content/test_dir', {
-						method: 'PATCH',
-						headers: new Headers({ 'Content-Type': 'application/json' }),
-						body: JSON.stringify({ path: 'content/test_dir_moved' })
-					});
-					const patchStatus = patchRes.status;
-					const patchBody = await patchRes.text();
-
-					// Then clean up delete
-					const delRes = await kernel.getKernelXhr().fetch('/api/contents/content/test_dir_moved', {
-						method: 'DELETE'
-					});
-
+					const driveRes = await kernel.getKernelXhr().get('/api/colab/drive');
+					let dirExists = false;
+					try {
+						await kernel.getKernelXhr().get('/api/contents/content/drive');
+						dirExists = true;
+					} catch (e) {
+						dirExists = false;
+					}
 					return JSON.stringify({
-						patchStatus: patchStatus,
-						patchBody: patchBody,
-						delStatus: delRes.status
+						driveRes: driveRes,
+						dirExists: dirExists
 					});
 				} catch (e) {
 					return JSON.stringify({ error: e.toString(), stack: e.stack });

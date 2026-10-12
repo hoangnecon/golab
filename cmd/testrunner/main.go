@@ -118,8 +118,13 @@ func main() {
 	})
 
 	runTest("telemetry.CheckDriveStatus", func() error {
-		_, err := telemetrySvc.CheckDriveStatus(ctx)
-		return err
+		status, err := telemetrySvc.CheckDriveStatus(ctx)
+		if err != nil {
+			return err
+		}
+		data, _ := json.Marshal(status)
+		fmt.Printf("   Drive Status Payload: %s\n", string(data))
+		return nil
 	})
 
 	// 3. Storage & Non-blocking File I/O
@@ -176,6 +181,14 @@ func main() {
 		return storageSvc.DeleteFile(ctx, testDir)
 	})
 
+	runTest("storage.ReadFile(unmounted drive path guardrail)", func() error {
+		_, err := storageSvc.ReadFile(ctx, "content/drive/MyDrive/missing_model.bin", "text")
+		if err == nil {
+			return fmt.Errorf("expected error for unmounted drive path, got nil")
+		}
+		fmt.Printf("   Anti-hallucination error caught: %v\n", err)
+		return nil
+	})
 	// 4. Notebook DOM Precision Editing
 	fmt.Println("\n--- Testing Notebook DOM Cell Editor ---")
 	runTest("notebook.GetNotebookOutline", func() error {

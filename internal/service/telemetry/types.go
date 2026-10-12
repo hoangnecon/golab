@@ -47,6 +47,10 @@ type BuildInfo struct {
 
 // DriveStatus contains Google Drive health and mount info.
 type DriveStatus struct {
-	Mounted bool           `json:"mounted"`
-	Details map[string]any `json:"details,omitempty"`
+	Mounted        bool   `json:"mounted"`
+	Status         string `json:"status"` // "connected" or "disconnected"
+	MountPath      string `json:"mount_path,omitempty"`
+	Message        string `json:"message"`
+	ActionRequired string `json:"action_required,omitempty"`
+	DFS            []any  `json:"dfs,omitempty"`
 }

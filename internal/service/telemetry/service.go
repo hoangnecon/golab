@@ -141,10 +141,27 @@ func (s *Service) CheckDriveStatus(ctx context.Context) (*DriveStatus, error) {
 		return nil, fmt.Errorf("drive status failed with status %d: %s", resp.Status, resp.RawText)
 	}
 
-	var details map[string]any
-	_ = json.Unmarshal(resp.Body, &details)
+	var raw struct {
+		DFS []any `json:"dfs"`
+	}
+	_ = json.Unmarshal(resp.Body, &raw)
+
+	mounted := len(raw.DFS) > 0
+	if !mounted {
+		return &DriveStatus{
+			Mounted:        false,
+			Status:         "disconnected",
+			Message:        "Google Drive is not mounted in this Colab session.",
+			ActionRequired: "Run 'from google.colab import drive; drive.mount(\"/content/drive\")' in a code cell to mount Google Drive.",
+			DFS:            raw.DFS,
+		}, nil
+	}
+
 	return &DriveStatus{
-		Mounted: details != nil,
-		Details: details,
+		Mounted:   true,
+		Status:    "connected",
+		MountPath: "/content/drive",
+		Message:   "Google Drive is mounted and healthy.",
+		DFS:       raw.DFS,
 	}, nil
 }

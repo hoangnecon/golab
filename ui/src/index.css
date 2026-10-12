@@ -3,6 +3,52 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-canvas: #09090b;
+    --bg-surface: #121215;
+    --bg-panel: #18181b;
+    --border-subtle: #27272a;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+  }
+
+  html {
+    background-color: #09090b;
+    color: #f4f4f5;
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    min-height: 100vh;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+/* Custom thin scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+@layer base {
   body {
     @apply bg-zinc-950 text-zinc-100;
   }

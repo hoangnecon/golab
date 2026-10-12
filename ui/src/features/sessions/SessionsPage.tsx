@@ -41,22 +41,52 @@ export function SessionsPage({
     );
   }
 
+  const busyCount = sessions.filter(
+    (s) => s.kernel_state === 'busy' || s.kernel_state === 'executing'
+  ).length;
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-5xl">
-      {sessions.map((sess) => {
-        const prof = profiles.find((p) => p.id === sess.profile_id);
-        return (
-          <SessionCard
-            key={sess.id}
-            session={sess}
-            profile={prof}
-            onInterrupt={onInterrupt}
-            onRestart={onRestart}
-            onFocus={onFocus}
-            onDetach={onDetach}
-          />
-        );
-      })}
+    <div className="space-y-6">
+      {/* Metric KPI Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
+          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Sessions</div>
+          <div className="text-xl font-semibold text-zinc-100 mt-0.5">{sessions.length}</div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
+          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Busy Kernels</div>
+          <div className="text-xl font-semibold text-amber-400 mt-0.5">{busyCount}</div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
+          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Profiles</div>
+          <div className="text-xl font-semibold text-zinc-100 mt-0.5">{profiles.length}</div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
+          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Direct Tunnel</div>
+          <div className="text-xl font-semibold text-emerald-400 mt-0.5">3453 Ready</div>
+        </div>
+      </div>
+
+      {/* Session Cards Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {sessions.map((sess) => {
+          const prof = profiles.find((p) => p.id === sess.profile_id);
+          return (
+            <SessionCard
+              key={sess.id}
+              session={sess}
+              profile={prof}
+              onInterrupt={onInterrupt}
+              onRestart={onRestart}
+              onFocus={onFocus}
+              onDetach={onDetach}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

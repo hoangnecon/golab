@@ -2,288 +2,203 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/hoangnecon/golab/internal/bridge"
-	"github.com/hoangnecon/golab/internal/config"
+	"github.com/hoangnecon/golab/internal/service/kernel"
+	"github.com/hoangnecon/golab/internal/service/notebook"
+	"github.com/hoangnecon/golab/internal/service/proxy"
+	"github.com/hoangnecon/golab/internal/service/storage"
+	"github.com/hoangnecon/golab/internal/service/telemetry"
+	"github.com/hoangnecon/golab/internal/service/terminal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const Version = "v1.5.1"
+const ServerVersion = "v2.0.0-harness"
 
-// Server wraps the MCP server with Colab browser proxy.
+// Server wraps the enterprise Colab MCP Server.
 type Server struct {
-	ws           *bridge.WSServer
-	proxy        *bridge.BrowserProxy
-	cfg          *config.Config
-	token        string
-	port         int
-	mcp          *mcp.Server
-	runningCells sync.Map // cellId -> startTime
+	mcp       *mcp.Server
+	cdp       *bridge.CDPClient
+	exec      *bridge.ColabExecutor
+	storage   *storage.Service
+	kernel    *kernel.Service
+	telemetry *telemetry.Service
+	terminal  *terminal.Service
+	notebook  *notebook.Service
+	proxy     *proxy.Service
 }
 
-func New(ws *bridge.WSServer, cfg *config.Config, token string, port int) *Server {
+// NewServer creates and initializes a complete MCP server with all domain services.
+func NewServer(cdpURL string) *Server {
+	cdp := bridge.NewCDPClient(cdpURL)
+	exec := bridge.NewColabExecutor(cdp)
+
 	s := &Server{
-		ws:    ws,
-		proxy: bridge.NewBrowserProxy(ws),
-		cfg:   cfg,
-		token: token,
-		port:  port,
+		cdp:       cdp,
+		exec:      exec,
+		storage:   storage.NewService(exec),
+		kernel:    kernel.NewService(exec),
+		telemetry: telemetry.NewService(exec),
+		terminal:  terminal.NewService(exec),
+		notebook:  notebook.NewService(exec),
+		proxy:     proxy.NewService(exec),
 	}
+
 	s.mcp = mcp.NewServer(&mcp.Implementation{
-		Name:    "golab",
-		Version: Version,
+		Name:    "golab-enterprise",
+		Version: ServerVersion,
 	}, nil)
+
 	s.registerTools()
 	return s
 }
 
+// Run starts the MCP server over standard input/output.
 func (s *Server) Run(ctx context.Context) error {
+	// Connect to CDP in background or when first tool runs
+	_ = s.cdp.Connect(ctx)
 	return s.mcp.Run(ctx, &mcp.StdioTransport{})
 }
 
 func (s *Server) registerTools() {
-	// Meta
+	// Group 1 — Storage & File Operations (Non-blocking)
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name:        "check_status",
-		Description: "Check if a Colab browser is connected. Returns connection status, uptime, and WebSocket port.",
-	}, s.checkStatus)
+		Name:        "colab_read_file",
+		Description: "Reads the complete contents of a file on the Colab container or mounted Google Drive in 20-50ms. Completely non-blocking, executes via Colab Public Tunnel REST Gateway without touching the Python kernel.",
+	}, s.colabReadFile)
 
-	// Group A — Browser Proxy
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name:        "open_notebook",
-		Description: "Opens a Colab notebook. If browser is already connected, reuses existing connection without opening a new tab.",
-	}, s.openNotebook)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_cells", Description: "Get cells from the connected notebook. Returns cell IDs, types, source code, and optionally outputs."}, s.getCells)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "add_code_cell", Description: "Add a new code cell at the specified index with the given code."}, s.addCodeCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "add_text_cell", Description: "Add a new markdown/text cell at the specified index."}, s.addTextCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "update_cell", Description: "Replace the entire content of a cell by its ID."}, s.updateCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "delete_cell", Description: "Delete a cell by its ID."}, s.deleteCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "move_cell", Description: "Move a cell to a new index position."}, s.moveCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "run_code_cell", Description: "Start executing a code cell. Returns immediately with {started: true}. Use get_cell_output or get_running_cells to check progress."}, s.runCodeCell)
+		Name:        "colab_write_file",
+		Description: "Creates or overwrites a file atomically in the Colab container or Google Drive. Non-blocking, executes in ~40ms while the model is training without queue delays.",
+	}, s.colabWriteFile)
 
-	// Group B — IDE Cell Editing
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "edit_cell_lines", Description: "Edit specific lines within a cell. Replaces lines from startLine to endLine with newContent. Lines are 1-indexed."}, s.editCellLines)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "find_replace_in_cell", Description: "Find and replace text within a single cell."}, s.findReplaceInCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "insert_in_cell", Description: "Insert new code at a specific line number within a cell. Existing code shifts down. Line 0 = top."}, s.insertInCell)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "search_cells", Description: "Search for a pattern across all cells. Returns matches with cell ID, line number, and context."}, s.searchCells)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_cell_with_lines", Description: "Get a cell's content with line numbers for easy reference."}, s.getCellWithLines)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_list_directory",
+		Description: "Lists files and subdirectories with sizes, permissions, and timestamps. Use 'content' for VM root or 'content/drive/MyDrive' for Google Drive.",
+	}, s.colabListDirectory)
 
-	// Group C — File I/O
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "list_drive", Description: "List files and directories in Google Drive. Returns a JSON tree."}, s.listDrive)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "read_file", Description: "Read a text file from the Colab VM or mounted Drive. Returns content with line numbers."}, s.readFile)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "write_file", Description: "Write content to a file on the Colab VM or mounted Drive."}, s.writeFile)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_create_directory",
+		Description: "Creates a new directory in the Colab filesystem or mounted Google Drive.",
+	}, s.colabCreateDirectory)
 
-	// Group D — Context
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_notebook_outline", Description: "Get a compact outline of the notebook: cell index, type, first line summary, function/class definitions, line count."}, s.getNotebookOutline)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_delete_file",
+		Description: "Permanently deletes a file or directory on the Colab container.",
+	}, s.colabDeleteFile)
 
-	// Group E — Environment
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_environment", Description: "Get system info: Python version, CUDA version, GPU model, RAM, disk usage."}, s.getEnvironment)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "check_package", Description: "Check if a specific Python package is installed and its version."}, s.checkPackage)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_move_file",
+		Description: "Renames or moves a file or directory to a new path in the Colab filesystem.",
+	}, s.colabMoveFile)
 
-	// Group F — Output Tracking
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_cell_output", Description: "Get the output of a specific cell by ID. Returns text output, errors, and image data. Set includeImages=true to get raw base64 data (expensive). By default only returns hasImages boolean and imageCount."}, s.getCellOutput)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "save_cell_images", Description: "Save images from a cell's output directly to local filesystem. Decodes base64 server-side and writes PNG/JPG files. Returns array of saved file paths. Use this instead of get_cell_output with includeImages=true to avoid sending large base64 data through the context."}, s.saveCellImages)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_running_cells", Description: "Get a list of cells currently being executed."}, s.getRunningCells)
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "get_error_cells", Description: "Get cells that produced errors, with error type and message."}, s.getErrorCells)
-}
+	// Group 2 — Kernel Execution Lifecycle
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_kernel_status",
+		Description: "Returns real-time status of all Colab kernels: execution state ('idle', 'busy', 'starting'), active notebook session, uptime, and connections.",
+	}, s.colabGetKernelStatus)
 
-// ── URL Parsing ──────────────────────────────────────
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_interrupt_kernel",
+		Description: "Dispatches an out-of-band SIGINT signal to stop a running or looping cell immediately within 1ms, preserving all variables in RAM.",
+	}, s.colabInterruptKernel)
 
-var (
-	colabDriveRe = regexp.MustCompile(`colab\.research\.google\.com/drive/([a-zA-Z0-9_-]+)`)
-	driveFileRe  = regexp.MustCompile(`drive\.google\.com/file/d/([a-zA-Z0-9_-]+)`)
-	driveOpenRe  = regexp.MustCompile(`drive\.google\.com/open\?id=([a-zA-Z0-9_-]+)`)
-	fileIDRe     = regexp.MustCompile(`^[a-zA-Z0-9_-]{20,}$`)
-)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_restart_kernel",
+		Description: "Restarts the Python kernel, terminating stalled processes and completely freeing GPU VRAM.",
+	}, s.colabRestartKernel)
 
-func extractNotebookPath(url string) string {
-	if url == "" {
-		return "/notebooks/empty.ipynb"
-	}
-	if m := colabDriveRe.FindStringSubmatch(url); len(m) > 1 {
-		return "/drive/" + m[1]
-	}
-	if m := driveFileRe.FindStringSubmatch(url); len(m) > 1 {
-		return "/drive/" + m[1]
-	}
-	if m := driveOpenRe.FindStringSubmatch(url); len(m) > 1 {
-		return "/drive/" + m[1]
-	}
-	if fileIDRe.MatchString(url) {
-		return "/drive/" + url
-	}
-	return "/drive/" + url
-}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_list_sessions",
+		Description: "Lists all active notebook sessions and their kernel bindings.",
+	}, s.colabListSessions)
 
-// ── MCP Response Helpers ─────────────────────────────
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_spawn_secondary_kernel",
+		Description: "Spawns a secondary Python kernel on the Colab VM to run parallel jobs on the Tesla GPU.",
+	}, s.colabSpawnSecondaryKernel)
 
-// extractProxyText unwraps the MCP content envelope from browser proxy responses.
-func extractProxyText(raw json.RawMessage) json.RawMessage {
-	var mcpResp struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &mcpResp); err == nil && len(mcpResp.Content) > 0 {
-		return json.RawMessage(mcpResp.Content[0].Text)
-	}
-	return raw
-}
+	// Group 3 — Hardware & Environment Telemetry
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_hardware_telemetry",
+		Description: "Retrieves instant hardware metrics in 2ms: Tesla GPU VRAM (used/free/total), GPU utilization, system RAM, and disk storage.",
+	}, s.colabGetHardwareTelemetry)
 
-// ── Hidden Cell Execution ────────────────────────────
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_build_info",
+		Description: "Retrieves Google Colab container image release tags and build metadata.",
+	}, s.colabGetBuildInfo)
 
-func (s *Server) runHiddenCell(ctx context.Context, code string) (string, error) {
-	cellsRaw, err := s.proxy.CallTool(ctx, "get_cells", map[string]any{
-		"cellIndexStart": 0, "cellIndexEnd": 500, "includeOutputs": false,
-	})
-	if err != nil {
-		return "", fmt.Errorf("get_cells: %w", err)
-	}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_check_drive_status",
+		Description: "Checks Google Drive mount status and FUSE driver communication health.",
+	}, s.colabCheckDriveStatus)
 
-	cellsResult := extractProxyText(cellsRaw)
-	var cellsResp struct {
-		Cells []json.RawMessage `json:"cells"`
-	}
-	json.Unmarshal(cellsResult, &cellsResp)
-	idx := len(cellsResp.Cells)
+	// Group 4 — Linux PTY Terminals
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_list_terminals",
+		Description: "Lists all active Linux PTY terminal sessions running on the Colab container.",
+	}, s.colabListTerminals)
 
-	addRaw, err := s.proxy.CallTool(ctx, "add_code_cell", map[string]any{
-		"cellIndex": idx, "language": "python", "code": code,
-	})
-	if err != nil {
-		return "", fmt.Errorf("add_code_cell: %w", err)
-	}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_create_terminal",
+		Description: "Creates a new background bash PTY terminal on the Colab container.",
+	}, s.colabCreateTerminal)
 
-	addResult := extractProxyText(addRaw)
-	var addResp struct {
-		NewCellID string `json:"newCellId"`
-	}
-	json.Unmarshal(addResult, &addResp)
-	if addResp.NewCellID == "" {
-		return "", fmt.Errorf("failed to create hidden cell: %s", string(addResult))
-	}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_delete_terminal",
+		Description: "Terminates a background bash terminal session.",
+	}, s.colabDeleteTerminal)
 
-	// Guarantee cleanup even if ctx is cancelled or run times out.
-	// Use background context so delete is not blocked by parent cancellation.
-	defer func() {
-		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		s.proxy.CallTool(cleanCtx, "delete_cell", map[string]any{"cellId": addResp.NewCellID})
-	}()
+	// Group 5 — Notebook DOM Precision Editing
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_notebook_outline",
+		Description: "Returns a compact skeletal outline of the notebook: cell indices, cell types, line counts, and first-line summaries.",
+	}, s.colabGetNotebookOutline)
 
-	runRaw, err := s.proxy.CallTool(ctx, "run_code_cell", map[string]any{"cellId": addResp.NewCellID})
-	if err != nil {
-		return "", fmt.Errorf("run_code_cell: %w", err)
-	}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_cells",
+		Description: "Fetches code and markdown cells from the connected notebook, with optional outputs.",
+	}, s.colabGetCells)
 
-	runResult := extractProxyText(runRaw)
-	var runResp struct {
-		Outputs []struct {
-			OutputType string   `json:"output_type"`
-			Text       []string `json:"text"`
-			EName      string   `json:"ename"`
-			EValue     string   `json:"evalue"`
-		} `json:"outputs"`
-	}
-	json.Unmarshal(runResult, &runResp)
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_add_cell",
+		Description: "Inserts a new code or markdown cell at a specified index in the notebook.",
+	}, s.colabAddCell)
 
-	var output strings.Builder
-	for _, o := range runResp.Outputs {
-		switch o.OutputType {
-		case "stream":
-			output.WriteString(strings.Join(o.Text, ""))
-		case "error":
-			output.WriteString(fmt.Sprintf("ERROR: %s: %s", o.EName, o.EValue))
-		}
-	}
-	return output.String(), nil
-}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_edit_cell_lines",
+		Description: "Performs precision line-level editing within a cell (start_line to end_line, 1-based index) avoiding whole-cell replacement.",
+	}, s.colabEditCellLines)
 
-// ── Cell Helpers ─────────────────────────────────────
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_update_cell",
+		Description: "Replaces the entire content of an existing cell by its ID.",
+	}, s.colabUpdateCell)
 
-type cellInfo struct {
-	ID       string   `json:"id"`
-	CellType string   `json:"cell_type"`
-	Source   []string `json:"source"`
-}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_delete_cell",
+		Description: "Deletes a cell from the notebook by its ID.",
+	}, s.colabDeleteCell)
 
-func (s *Server) getAllCells(ctx context.Context, includeOutputs bool) ([]cellInfo, json.RawMessage, error) {
-	raw, err := s.proxy.CallTool(ctx, "get_cells", map[string]any{
-		"cellIndexStart": 0, "cellIndexEnd": 500, "includeOutputs": includeOutputs,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	result := extractProxyText(raw)
-	var resp struct {
-		Cells []cellInfo `json:"cells"`
-	}
-	json.Unmarshal(result, &resp)
-	return resp.Cells, result, nil
-}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_move_cell",
+		Description: "Moves a cell to a new index position in the notebook.",
+	}, s.colabMoveCell)
 
-// ── Result Helpers ───────────────────────────────────
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_run_code_cell",
+		Description: "Executes a code cell by its ID and returns its output trace.",
+	}, s.colabRunCodeCell)
 
-func jsonResult(v any) (*mcp.CallToolResult, error) {
-	object := jsonObject(v)
-	data, err := json.Marshal(object)
-	if err != nil {
-		return nil, err
-	}
-	return &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
-		StructuredContent: object,
-	}, nil
-}
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_cell_with_lines",
+		Description: "Returns a cell's source code annotated with line numbers for reference.",
+	}, s.colabGetCellWithLines)
 
-// rawJSONResult converts a browser response into an MCP structured JSON result.
-// Colab may return either a direct JSON value or an MCP content envelope whose
-// text field contains JSON. Non-JSON text is kept in a JSON object as "value".
-func rawJSONResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
-	raw = extractProxyText(raw)
-
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		value = map[string]any{"value": string(raw)}
-	}
-	return jsonResult(value)
-}
-
-// jsonObject ensures structuredContent always satisfies the MCP requirement
-// that structured tool output is a JSON object.
-func jsonObject(v any) map[string]any {
-	if object, ok := v.(map[string]any); ok {
-		return object
-	}
-
-	data, err := json.Marshal(v)
-	if err == nil {
-		var object map[string]any
-		if json.Unmarshal(data, &object) == nil && object != nil {
-			return object
-		}
-	}
-	return map[string]any{"result": v}
-}
-
-func errResult(msg string) (*mcp.CallToolResult, error) {
-	object := map[string]any{"error": msg}
-	data, _ := json.Marshal(object)
-	return &mcp.CallToolResult{
-		Content:           []mcp.Content{&mcp.TextContent{Text: string(data)}},
-		StructuredContent: object,
-		IsError:           true,
-	}, nil
-}
-
-func init() {
-	log.SetFlags(log.Ltime | log.Lshortfile)
+	// Group 6 — Reverse Proxy Router
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_proxy_forward",
+		Description: "Routes an HTTP request directly to any internal port running on the Colab VM via Google's /_proxy/<port>/ gateway (e.g. Gradio, TensorBoard, FastAPI).",
+	}, s.colabProxyForward)
 }

@@ -3,6 +3,7 @@
 
 # Binaries
 golab
+bin/
 
 # Docs
 docs/

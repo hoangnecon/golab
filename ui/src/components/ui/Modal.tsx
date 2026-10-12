@@ -35,7 +35,7 @@ export function Modal({ isOpen, onClose, title, description, children, className
       {/* Dialog container */}
       <div
         className={cn(
-          'relative w-full max-w-md bg-[#121215] border border-zinc-800 rounded-lg shadow-2xl p-5 z-10 flex flex-col gap-4 animate-in fade-in-0 zoom-in-95 duration-150',
+          'relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-[#121215] border border-zinc-800 rounded-lg shadow-2xl p-5 z-10 flex flex-col gap-4 animate-in fade-in-0 zoom-in-95 duration-150',
           className
         )}
       >

@@ -3,7 +3,11 @@ import { useState, useEffect } from 'react';
 export function useSidebar() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     const saved = localStorage.getItem('golab_sidebar_collapsed');
-    return saved === 'true';
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    // Default to collapsed if viewport is narrower than 1024px (e.g. In-App Browser)
+    return typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
   });
 
   const toggleSidebar = () => {

@@ -35,33 +35,36 @@ export function Sidebar({
     <aside
       className={cn(
         'bg-[#09090b] border-r border-zinc-800/80 flex flex-col justify-between select-none transition-all duration-200 z-20 flex-shrink-0',
-        isCollapsed ? 'w-16' : 'w-60'
+        isCollapsed ? 'w-14' : 'w-56'
       )}
     >
       <div>
         {/* Brand header */}
-        <div className="h-14 px-4 border-b border-zinc-800/80 flex items-center justify-between">
+        <div className="h-14 px-3.5 border-b border-zinc-800/80 flex items-center justify-between">
           {!isCollapsed ? (
             <div className="flex items-baseline gap-2 overflow-hidden">
               <span className="text-sm font-semibold tracking-tight text-zinc-100">GoLab</span>
               <span className="text-[11px] font-mono text-zinc-500">control</span>
             </div>
           ) : (
-            <div className="w-full flex justify-center">
-              <span className="text-sm font-semibold font-mono text-zinc-200">G</span>
-            </div>
+            <button
+              onClick={onToggleCollapse}
+              title="Expand sidebar"
+              className="w-full flex justify-center text-xs font-bold font-mono text-zinc-300 hover:text-white"
+            >
+              GL
+            </button>
           )}
 
-          <button
-            onClick={onToggleCollapse}
-            title={isCollapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
-            className={cn(
-              'p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 rounded transition-colors',
-              isCollapsed && 'hidden'
-            )}
-          >
-            <PanelLeftClose className="w-4 h-4" />
-          </button>
+          {!isCollapsed && (
+            <button
+              onClick={onToggleCollapse}
+              title="Collapse sidebar (Ctrl+B)"
+              className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 rounded transition-colors"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Nav list */}
@@ -74,9 +77,9 @@ export function Sidebar({
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
-                title={isCollapsed ? item.label : undefined}
+                title={isCollapsed ? `${item.label} (${item.count})` : undefined}
                 className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-colors',
+                  'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-xs font-medium transition-colors',
                   isActive
                     ? 'bg-zinc-800 text-zinc-100 shadow-sm'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60',
@@ -86,7 +89,7 @@ export function Sidebar({
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {!isCollapsed && (
                   <>
-                    <span className="flex-1 text-left">{item.label}</span>
+                    <span className="flex-1 text-left truncate">{item.label}</span>
                     {item.count > 0 && (
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
                         {item.count}
@@ -109,28 +112,28 @@ export function Sidebar({
                 'w-2 h-2 rounded-full',
                 isConnected ? 'bg-emerald-500' : 'bg-zinc-600'
               )}
-              title={isConnected ? 'Daemon 127.0.0.1:9120 connected' : 'Daemon offline'}
+              title={isConnected ? 'Daemon live' : 'Daemon offline'}
             />
             <button
               onClick={onToggleCollapse}
-              title="Expand sidebar"
+              title="Expand sidebar (Ctrl+B)"
               className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 rounded transition-colors"
             >
-              <PanelLeftOpen className="w-4 h-4" />
+              <PanelLeftOpen className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
           <div className="flex items-center justify-between text-[11px] font-mono text-zinc-500">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span
                 className={cn(
-                  'w-1.5 h-1.5 rounded-full',
+                  'w-1.5 h-1.5 rounded-full flex-shrink-0',
                   isConnected ? 'bg-emerald-500' : 'bg-zinc-600'
                 )}
               />
-              <span>127.0.0.1:9120</span>
+              <span className="truncate">127.0.0.1:9120</span>
             </div>
-            <span className="text-[10px] text-zinc-600">v2.0</span>
+            <span className="text-[10px] text-zinc-600 flex-shrink-0">v2.0</span>
           </div>
         )}
       </div>

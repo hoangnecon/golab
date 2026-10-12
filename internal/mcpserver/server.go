@@ -10,6 +10,7 @@ import (
 	"github.com/hoangnecon/golab/internal/service/storage"
 	"github.com/hoangnecon/golab/internal/service/telemetry"
 	"github.com/hoangnecon/golab/internal/service/terminal"
+	"github.com/hoangnecon/golab/internal/session"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -17,15 +18,16 @@ const ServerVersion = "v2.0.0-harness"
 
 // Server wraps the enterprise Colab MCP Server.
 type Server struct {
-	mcp       *mcp.Server
-	cdp       *bridge.CDPClient
-	exec      *bridge.ColabExecutor
-	storage   *storage.Service
-	kernel    *kernel.Service
-	telemetry *telemetry.Service
-	terminal  *terminal.Service
-	notebook  *notebook.Service
-	proxy     *proxy.Service
+	mcp        *mcp.Server
+	sessionMgr *session.Manager
+	cdp        *bridge.CDPClient
+	exec       *bridge.ColabExecutor
+	storage    *storage.Service
+	kernel     *kernel.Service
+	telemetry  *telemetry.Service
+	terminal   *terminal.Service
+	notebook   *notebook.Service
+	proxy      *proxy.Service
 }
 
 // NewServer creates and initializes a complete MCP server with all domain services.
@@ -53,10 +55,56 @@ func NewServer(cdpURL string) *Server {
 	return s
 }
 
+// NewServerWithSessionManager creates an MCP server wired to a dynamic session manager.
+func NewServerWithSessionManager(sm *session.Manager) *Server {
+	s := &Server{
+		sessionMgr: sm,
+	}
+
+	s.mcp = mcp.NewServer(&mcp.Implementation{
+		Name:    "golab-enterprise",
+		Version: ServerVersion,
+	}, nil)
+
+	s.registerTools()
+	return s
+}
+
+func (s *Server) getServices(ctx context.Context, sessionID string) (*session.DomainServices, string, error) {
+	if s.sessionMgr != nil {
+		act, err := s.sessionMgr.ResolveSession(ctx, sessionID)
+		if err != nil {
+			return nil, "", err
+		}
+		return act.Services, act.Session.ID, nil
+	}
+	return &session.DomainServices{
+		Storage:   s.storage,
+		Kernel:    s.kernel,
+		Telemetry: s.telemetry,
+		Notebook:  s.notebook,
+		Terminal:  s.terminal,
+		Proxy:     s.proxy,
+	}, "default", nil
+}
+
+func (s *Server) logActivity(sessionID, toolName string, latencyMs int64, err error) {
+	if s.sessionMgr != nil && s.sessionMgr.Store() != nil {
+		status := "success"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		_ = s.sessionMgr.Store().LogActivity(sessionID, toolName, latencyMs, status, errMsg)
+	}
+}
+
 // Run starts the MCP server over standard input/output.
 func (s *Server) Run(ctx context.Context) error {
-	// Connect to CDP in background or when first tool runs
-	_ = s.cdp.Connect(ctx)
+	if s.cdp != nil {
+		_ = s.cdp.Connect(ctx)
+	}
 	return s.mcp.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -201,4 +249,20 @@ func (s *Server) registerTools() {
 		Name:        "colab_proxy_forward",
 		Description: "Routes an HTTP request directly to any internal port running on the Colab VM via Google's /_proxy/<port>/ gateway (e.g. Gradio, TensorBoard, FastAPI).",
 	}, s.colabProxyForward)
+
+	// Group 7 — Multi-Session Worktree Management
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_list_all_sessions",
+		Description: "Lists all registered and active Google Colab notebook sessions across all Chrome profiles, along with current GPU VRAM and kernel states.",
+	}, s.colabListAllSessions)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_switch_active_session",
+		Description: "Switches the active Google Colab notebook context. Subsequent MCP commands without an explicit session_id will route to this session.",
+	}, s.colabSwitchActiveSession)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_create_session",
+		Description: "Opens and attaches a new Colab notebook session under a specified Google account profile.",
+	}, s.colabCreateSession)
 }

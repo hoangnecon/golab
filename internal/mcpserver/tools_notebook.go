@@ -7,10 +7,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func (s *Server) colabGetNotebookOutline(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+func (s *Server) colabGetNotebookOutline(ctx context.Context, req *mcp.CallToolRequest, input SessionOnlyInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	outline, err := s.notebook.GetNotebookOutline(ctx)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	outline, err := svcs.Notebook.GetNotebookOutline(ctx)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_get_notebook_outline", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -19,15 +24,21 @@ func (s *Server) colabGetNotebookOutline(ctx context.Context, req *mcp.CallToolR
 
 // GetCellsInput specifies cell range.
 type GetCellsInput struct {
-	StartIndex     int  `json:"start_index,omitempty" jsonschema:"Start index (0-based inclusive). Default 0."`
-	EndIndex       int  `json:"end_index,omitempty" jsonschema:"End index (exclusive). Default 100."`
-	IncludeOutputs bool `json:"include_outputs,omitempty" jsonschema:"Include executed cell outputs. Default false."`
+	SessionID      string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
+	StartIndex     int    `json:"start_index,omitempty" jsonschema:"Start index (0-based inclusive). Default 0."`
+	EndIndex       int    `json:"end_index,omitempty" jsonschema:"End index (exclusive). Default 100."`
+	IncludeOutputs bool   `json:"include_outputs,omitempty" jsonschema:"Include executed cell outputs. Default false."`
 }
 
 func (s *Server) colabGetCells(ctx context.Context, req *mcp.CallToolRequest, input GetCellsInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	cells, err := s.notebook.GetCells(ctx, input.StartIndex, input.EndIndex, input.IncludeOutputs)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	cells, err := svcs.Notebook.GetCells(ctx, input.StartIndex, input.EndIndex, input.IncludeOutputs)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_get_cells", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -36,21 +47,26 @@ func (s *Server) colabGetCells(ctx context.Context, req *mcp.CallToolRequest, in
 
 // AddCellInput specifies new cell content.
 type AddCellInput struct {
-	Index    int    `json:"index" jsonschema:"Position index where cell is inserted (0-based). Required."`
-	CellType string `json:"cell_type" jsonschema:"Cell type: 'code' or 'markdown'. Required."`
-	Content  string `json:"content" jsonschema:"Code or markdown content for the new cell. Required."`
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
+	Index     int    `json:"index" jsonschema:"Position index where cell is inserted (0-based). Required."`
+	CellType  string `json:"cell_type" jsonschema:"Cell type: 'code' or 'markdown'. Required."`
+	Content   string `json:"content" jsonschema:"Code or markdown content for the new cell. Required."`
 }
 
 func (s *Server) colabAddCell(ctx context.Context, req *mcp.CallToolRequest, input AddCellInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
 	var cellID string
-	var err error
 	if input.CellType == "markdown" || input.CellType == "text" {
-		cellID, err = s.notebook.AddTextCell(ctx, input.Index, input.Content)
+		cellID, err = svcs.Notebook.AddTextCell(ctx, input.Index, input.Content)
 	} else {
-		cellID, err = s.notebook.AddCodeCell(ctx, input.Index, input.Content)
+		cellID, err = svcs.Notebook.AddCodeCell(ctx, input.Index, input.Content)
 	}
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_add_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -59,6 +75,7 @@ func (s *Server) colabAddCell(ctx context.Context, req *mcp.CallToolRequest, inp
 
 // EditCellLinesInput specifies surgical line replacements.
 type EditCellLinesInput struct {
+	SessionID  string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
 	CellID     string `json:"cell_id" jsonschema:"ID of the cell to edit. Required."`
 	StartLine  int    `json:"start_line" jsonschema:"First line to replace (1-based index). Required."`
 	EndLine    int    `json:"end_line" jsonschema:"Last line to replace (1-based index inclusive). Required."`
@@ -67,8 +84,13 @@ type EditCellLinesInput struct {
 
 func (s *Server) colabEditCellLines(ctx context.Context, req *mcp.CallToolRequest, input EditCellLinesInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	res, err := s.notebook.EditCellLines(ctx, input.CellID, input.StartLine, input.EndLine, input.NewContent)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	res, err := svcs.Notebook.EditCellLines(ctx, input.CellID, input.StartLine, input.EndLine, input.NewContent)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_edit_cell_lines", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -77,14 +99,20 @@ func (s *Server) colabEditCellLines(ctx context.Context, req *mcp.CallToolReques
 
 // UpdateCellInput overwrites full cell.
 type UpdateCellInput struct {
-	CellID  string `json:"cell_id" jsonschema:"ID of the cell. Required."`
-	Content string `json:"content" jsonschema:"Complete replacement content. Required."`
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
+	CellID    string `json:"cell_id" jsonschema:"ID of the cell. Required."`
+	Content   string `json:"content" jsonschema:"Complete replacement content. Required."`
 }
 
 func (s *Server) colabUpdateCell(ctx context.Context, req *mcp.CallToolRequest, input UpdateCellInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	err := s.notebook.UpdateCell(ctx, input.CellID, input.Content)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	err = svcs.Notebook.UpdateCell(ctx, input.CellID, input.Content)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_update_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -93,13 +121,19 @@ func (s *Server) colabUpdateCell(ctx context.Context, req *mcp.CallToolRequest, 
 
 // CellTargetInput specifies target cell ID.
 type CellTargetInput struct {
-	CellID string `json:"cell_id" jsonschema:"Cell ID. Required."`
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
+	CellID    string `json:"cell_id" jsonschema:"Cell ID. Required."`
 }
 
 func (s *Server) colabDeleteCell(ctx context.Context, req *mcp.CallToolRequest, input CellTargetInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	err := s.notebook.DeleteCell(ctx, input.CellID)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	err = svcs.Notebook.DeleteCell(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_delete_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -108,14 +142,20 @@ func (s *Server) colabDeleteCell(ctx context.Context, req *mcp.CallToolRequest, 
 
 // MoveCellInput specifies move target.
 type MoveCellInput struct {
-	CellID   string `json:"cell_id" jsonschema:"Cell ID. Required."`
-	NewIndex int    `json:"new_index" jsonschema:"New index position (0-based). Required."`
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional session ID to route this command. If omitted, routes to the active notebook session."`
+	CellID    string `json:"cell_id" jsonschema:"Cell ID. Required."`
+	NewIndex  int    `json:"new_index" jsonschema:"New index position (0-based). Required."`
 }
 
 func (s *Server) colabMoveCell(ctx context.Context, req *mcp.CallToolRequest, input MoveCellInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	err := s.notebook.MoveCell(ctx, input.CellID, input.NewIndex)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	err = svcs.Notebook.MoveCell(ctx, input.CellID, input.NewIndex)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_move_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -124,8 +164,13 @@ func (s *Server) colabMoveCell(ctx context.Context, req *mcp.CallToolRequest, in
 
 func (s *Server) colabRunCodeCell(ctx context.Context, req *mcp.CallToolRequest, input CellTargetInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	rawOutput, err := s.notebook.RunCodeCell(ctx, input.CellID)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	rawOutput, err := svcs.Notebook.RunCodeCell(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_run_code_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -134,8 +179,13 @@ func (s *Server) colabRunCodeCell(ctx context.Context, req *mcp.CallToolRequest,
 
 func (s *Server) colabGetCellWithLines(ctx context.Context, req *mcp.CallToolRequest, input CellTargetInput) (*mcp.CallToolResult, any, error) {
 	start := time.Now()
-	res, err := s.notebook.GetCellWithLines(ctx, input.CellID)
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	res, err := svcs.Notebook.GetCellWithLines(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
+	s.logActivity(sessID, "colab_get_cell_with_lines", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

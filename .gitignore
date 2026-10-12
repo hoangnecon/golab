@@ -19,3 +19,7 @@ docs/*
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Frontend dependencies
+ui/node_modules/
+.pnpm-debug.log*

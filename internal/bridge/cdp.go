@@ -65,28 +65,86 @@ func NewCDPClient(cdpURL string) *CDPClient {
 	}
 }
 
+// BaseURL returns the CDP HTTP endpoint.
+func (c *CDPClient) BaseURL() string {
+	return c.cdpURL
+}
+
+// Target returns the currently attached target info.
+func (c *CDPClient) Target() *TargetInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.target
+}
+
 // Connect locates an active Colab tab and establishes a WebSocket connection.
 func (c *CDPClient) Connect(ctx context.Context) error {
+	return c.ConnectNotebook(ctx, "")
+}
+
+// ConnectNotebook connects to a specific Colab notebook URL, or any active Colab tab if notebookURL is empty.
+func (c *CDPClient) ConnectNotebook(ctx context.Context, notebookURL string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.connected && c.conn != nil {
-		return nil
+		if notebookURL == "" || (c.target != nil && strings.Contains(c.target.URL, notebookURL)) {
+			return nil
+		}
+		_ = c.conn.Close(websocket.StatusNormalClosure, "switching target")
+		c.conn = nil
+		c.connected = false
 	}
 
-	target, err := c.findColabTarget(ctx)
+	targets, err := c.listTargets(ctx)
 	if err != nil {
-		return fmt.Errorf("find colab target: %w", err)
+		return fmt.Errorf("list targets: %w", err)
 	}
+
+	var target *TargetInfo
+	if notebookURL != "" {
+		for i := range targets {
+			t := &targets[i]
+			if t.Type == "page" && strings.Contains(t.URL, notebookURL) {
+				target = t
+				break
+			}
+		}
+	}
+
+	if target == nil {
+		for i := range targets {
+			t := &targets[i]
+			if t.Type == "page" && strings.Contains(t.URL, "colab.research.google.com") {
+				target = t
+				break
+			}
+		}
+	}
+
+	if target == nil {
+		for i := range targets {
+			t := &targets[i]
+			if t.Type == "page" && strings.HasPrefix(t.URL, "http") {
+				target = t
+				break
+			}
+		}
+	}
+
+	if target == nil {
+		return errors.New("no matching colab target found in chrome")
+	}
+
 	if target.WebSocketDebuggerURL == "" {
-		return errors.New("colab target has empty webSocketDebuggerUrl")
+		return errors.New("target has empty webSocketDebuggerUrl")
 	}
 
 	conn, _, err := websocket.Dial(ctx, target.WebSocketDebuggerURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial cdp websocket: %w", err)
 	}
-	conn.SetReadLimit(32 * 1024 * 1024) // 32MB max message
+	conn.SetReadLimit(32 * 1024 * 1024)
 
 	c.conn = conn
 	c.target = target
@@ -99,6 +157,91 @@ func (c *CDPClient) Connect(ctx context.Context) error {
 	return nil
 }
 
+// ListTargets returns all active browser tabs and devtools targets.
+func (c *CDPClient) ListTargets(ctx context.Context) ([]TargetInfo, error) {
+	return c.listTargets(ctx)
+}
+
+func (c *CDPClient) listTargets(ctx context.Context) ([]TargetInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.cdpURL+"/json/list", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("query /json/list: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var targets []TargetInfo
+	if err := json.Unmarshal(body, &targets); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+// OpenTab opens a new tab with the specified URL.
+func (c *CDPClient) OpenTab(ctx context.Context, targetURL string) (*TargetInfo, error) {
+	endpoint := c.cdpURL + "/json/new"
+	if targetURL != "" {
+		endpoint += "?" + targetURL
+	}
+	req, err := http.NewRequestWithContext(ctx, "PUT", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("open new tab: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var target TargetInfo
+	if err := json.Unmarshal(body, &target); err != nil {
+		return nil, err
+	}
+	return &target, nil
+}
+
+// FocusTab activates a specific tab in the browser window.
+func (c *CDPClient) FocusTab(ctx context.Context, targetID string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/json/activate/%s", c.cdpURL, targetID), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// CloseTab terminates a specific tab.
+func (c *CDPClient) CloseTab(ctx context.Context, targetID string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/json/close/%s", c.cdpURL, targetID), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
 func (c *CDPClient) readLoop(conn *websocket.Conn, closed chan struct{}) {
 	defer func() {
 		c.mu.Lock()

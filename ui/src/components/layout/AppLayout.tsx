@@ -29,7 +29,7 @@ export function AppLayout({
   const { isCollapsed, toggleSidebar } = useSidebar();
 
   return (
-    <div className="flex h-screen bg-[#090a0d] text-zinc-100 font-sans antialiased overflow-hidden select-none">
+    <div className="flex h-screen bg-[#0b0c0e] text-zinc-100 font-sans antialiased overflow-hidden select-none">
       <Sidebar
         activeTab={activeTab}
         onTabChange={onTabChange}
@@ -41,7 +41,7 @@ export function AppLayout({
         isConnected={isConnected}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0c0d11]">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0e0f12]">
         <Header
           activeTab={activeTab}
           isCollapsed={isCollapsed}
@@ -51,8 +51,8 @@ export function AppLayout({
           isConnected={isConnected}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-6xl mx-auto w-full">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="max-w-5xl mx-auto w-full">
             {children}
           </div>
         </main>

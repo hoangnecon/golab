@@ -8,41 +8,16 @@ interface ActivityPageProps {
 }
 
 export function ActivityPage({ activity }: ActivityPageProps) {
-  const totalInvocations = activity.length;
-  const errorCount = activity.filter((a) => a.status !== 'success').length;
-  const avgLatency =
-    totalInvocations > 0
-      ? Math.round(activity.reduce((acc, a) => acc + (a.latency_ms || 0), 0) / totalInvocations)
-      : 0;
-
   return (
-    <div className="space-y-6">
-      {/* Metric KPI Overview */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Total Calls</div>
-          <div className="text-xl font-semibold text-zinc-100 mt-0.5">{totalInvocations}</div>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Avg Latency</div>
-          <div className="text-xl font-semibold text-emerald-400 mt-0.5">{avgLatency} ms</div>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Errors</div>
-          <div className="text-xl font-semibold text-red-400 mt-0.5">{errorCount}</div>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <Table>
         <TableHeader>
           <tr>
             <TableHead>Timestamp</TableHead>
             <TableHead>Agent MCP Tool</TableHead>
-            <TableHead>Execution Latency</TableHead>
-            <TableHead>Result Status</TableHead>
-            <TableHead>Execution Payload / Details</TableHead>
+            <TableHead>Latency</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Details</TableHead>
           </tr>
         </TableHeader>
         <TableBody>
@@ -62,7 +37,7 @@ export function ActivityPage({ activity }: ActivityPageProps) {
                 </TableCell>
                 <TableCell>
                   <Badge variant={log.status === 'success' ? 'success' : 'error'}>
-                    {log.status.toUpperCase()}
+                    {log.status}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-zinc-500 font-mono text-[11px] truncate max-w-sm">

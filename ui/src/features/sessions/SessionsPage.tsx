@@ -46,32 +46,27 @@ export function SessionsPage({
   ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Metric KPI Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Sessions</div>
-          <div className="text-xl font-semibold text-zinc-100 mt-0.5">{sessions.length}</div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+          <div className="text-[11px] text-zinc-500 font-medium">Active Sessions</div>
+          <div className="text-lg font-semibold text-zinc-200 mt-0.5">{sessions.length}</div>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Busy Kernels</div>
-          <div className="text-xl font-semibold text-amber-400 mt-0.5">{busyCount}</div>
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+          <div className="text-[11px] text-zinc-500 font-medium">Busy Kernels</div>
+          <div className="text-lg font-semibold text-zinc-200 mt-0.5">{busyCount}</div>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Profiles</div>
-          <div className="text-xl font-semibold text-zinc-100 mt-0.5">{profiles.length}</div>
-        </div>
-
-        <div className="p-3.5 rounded-xl bg-[#121319] border border-[#1f2229]">
-          <div className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">Direct Tunnel</div>
-          <div className="text-xl font-semibold text-emerald-400 mt-0.5">3453 Ready</div>
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+          <div className="text-[11px] text-zinc-500 font-medium">Chrome Profiles</div>
+          <div className="text-lg font-semibold text-zinc-200 mt-0.5">{profiles.length}</div>
         </div>
       </div>
 
       {/* Session Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         {sessions.map((sess) => {
           const prof = profiles.find((p) => p.id === sess.profile_id);
           return (

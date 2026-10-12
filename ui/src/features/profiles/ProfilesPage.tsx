@@ -14,20 +14,7 @@ interface ProfilesPageProps {
 
 export function ProfilesPage({ profiles, onLaunch, onStop, onDelete }: ProfilesPageProps) {
   return (
-    <div className="space-y-6">
-      {/* Info card */}
-      <div className="p-4 rounded-xl bg-[#121319] border border-[#1f2229] flex items-center justify-between gap-4">
-        <div className="space-y-0.5">
-          <h3 className="text-xs font-semibold text-zinc-200">Chrome Profile Sandbox Isolation</h3>
-          <p className="text-[11px] text-zinc-400">
-            Each profile runs with a dedicated user data folder and isolated CDP port (9222+), allowing simultaneous Colab Pro and Free tiers.
-          </p>
-        </div>
-        <div className="text-xs font-mono text-zinc-400 bg-[#090a0d] px-3 py-1.5 rounded-lg border border-[#1e2025]">
-          {profiles.length} Configured
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <Table>
         <TableHeader>
           <tr>
@@ -59,7 +46,7 @@ export function ProfilesPage({ profiles, onLaunch, onStop, onDelete }: ProfilesP
                 </TableCell>
                 <TableCell>
                   <Badge variant={p.is_running ? 'success' : 'neutral'} dot>
-                    {p.is_running ? 'Active (Ready)' : 'Stopped'}
+                    {p.is_running ? 'Running' : 'Stopped'}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">

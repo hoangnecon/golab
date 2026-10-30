@@ -43,14 +43,14 @@ func (s *Server) colabSwitchActiveSession(ctx context.Context, req *mcp.CallTool
 		return errorResult(errors.New("session_id is required"), 0)
 	}
 
-	err := s.sessionMgr.Store().SetActiveSession(input.SessionID)
+	err := s.sessionMgr.Store().SetActiveSession(ctx, input.SessionID)
 	latency := time.Since(start).Milliseconds()
 	s.logActivity(ctx, input.SessionID, "colab_switch_active_session", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
 
-	sess, _ := s.sessionMgr.Store().GetSession(input.SessionID)
+	sess, _ := s.sessionMgr.Store().GetSession(ctx, input.SessionID)
 	return successResult(map[string]any{
 		"message":        "Active session switched successfully",
 		"active_session": sess,

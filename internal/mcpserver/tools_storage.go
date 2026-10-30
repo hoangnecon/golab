@@ -22,7 +22,7 @@ func (s *Server) colabReadFile(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	res, err := svcs.Storage.ReadFile(ctx, input.Path, input.Format)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_read_file", latency, err)
+	s.logActivity(ctx, sessID, "colab_read_file", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -45,7 +45,7 @@ func (s *Server) colabWriteFile(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	res, err := svcs.Storage.WriteFile(ctx, input.Path, input.Content, input.Format)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_write_file", latency, err)
+	s.logActivity(ctx, sessID, "colab_write_file", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -66,7 +66,7 @@ func (s *Server) colabListDirectory(ctx context.Context, req *mcp.CallToolReques
 	}
 	res, err := svcs.Storage.ListDirectory(ctx, input.Path)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_list_directory", latency, err)
+	s.logActivity(ctx, sessID, "colab_list_directory", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -87,7 +87,7 @@ func (s *Server) colabCreateDirectory(ctx context.Context, req *mcp.CallToolRequ
 	}
 	err = svcs.Storage.CreateDirectory(ctx, input.Path)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_create_directory", latency, err)
+	s.logActivity(ctx, sessID, "colab_create_directory", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -108,7 +108,7 @@ func (s *Server) colabDeleteFile(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	err = svcs.Storage.DeleteFile(ctx, input.Path)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_delete_file", latency, err)
+	s.logActivity(ctx, sessID, "colab_delete_file", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -130,7 +130,7 @@ func (s *Server) colabMoveFile(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	err = svcs.Storage.MoveFile(ctx, input.OldPath, input.NewPath)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_move_file", latency, err)
+	s.logActivity(ctx, sessID, "colab_move_file", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

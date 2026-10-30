@@ -19,7 +19,7 @@ func (s *Server) colabListAllSessions(ctx context.Context, req *mcp.CallToolRequ
 
 	sessions, err := s.sessionMgr.ListLiveSessions(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity("", "colab_list_all_sessions", latency, err)
+	s.logActivity(ctx, "", "colab_list_all_sessions", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -45,7 +45,7 @@ func (s *Server) colabSwitchActiveSession(ctx context.Context, req *mcp.CallTool
 
 	err := s.sessionMgr.Store().SetActiveSession(input.SessionID)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(input.SessionID, "colab_switch_active_session", latency, err)
+	s.logActivity(ctx, input.SessionID, "colab_switch_active_session", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -75,7 +75,7 @@ func (s *Server) colabCreateSession(ctx context.Context, req *mcp.CallToolReques
 
 	act, err := s.sessionMgr.OpenNotebook(ctx, input.ProfileID, input.NotebookURL, input.Name)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity("", "colab_create_session", latency, err)
+	s.logActivity(ctx, "", "colab_create_session", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

@@ -15,7 +15,7 @@ func (s *Server) colabGetHardwareTelemetry(ctx context.Context, req *mcp.CallToo
 	}
 	telem, err := svcs.Telemetry.GetHardwareTelemetry(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_get_hardware_telemetry", latency, err)
+	s.logActivity(ctx, sessID, "colab_get_hardware_telemetry", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -30,7 +30,7 @@ func (s *Server) colabGetBuildInfo(ctx context.Context, req *mcp.CallToolRequest
 	}
 	info, err := svcs.Telemetry.GetBuildInfo(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_get_build_info", latency, err)
+	s.logActivity(ctx, sessID, "colab_get_build_info", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -45,7 +45,7 @@ func (s *Server) colabCheckDriveStatus(ctx context.Context, req *mcp.CallToolReq
 	}
 	status, err := svcs.Telemetry.CheckDriveStatus(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_check_drive_status", latency, err)
+	s.logActivity(ctx, sessID, "colab_check_drive_status", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

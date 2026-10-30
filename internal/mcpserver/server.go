@@ -67,6 +67,7 @@ func NewServerWithSessionManager(sm *session.Manager) *Server {
 	}, nil)
 
 	s.registerTools()
+	s.mcp.AddReceivingMiddleware(s.captureToolCalls)
 	return s
 }
 
@@ -88,15 +89,21 @@ func (s *Server) getServices(ctx context.Context, sessionID string) (*session.Do
 	}, "default", nil
 }
 
-func (s *Server) logActivity(sessionID, toolName string, latencyMs int64, err error) {
-	if s.sessionMgr != nil && s.sessionMgr.Store() != nil {
+func (s *Server) logActivity(ctx context.Context, sessionID, toolName string, latencyMs int64, err error) {
+	// Inside captureToolCalls the row is written once the result is known,
+	// so it can include the request and response payloads.
+	if pc, ok := ctx.Value(pendingCallKey{}).(*pendingCall); ok {
+		pc.logged, pc.sessionID, pc.latencyMs, pc.err = true, sessionID, latencyMs, err
+		return
+	}
+	if st := s.activityStore(); st != nil {
 		status := "success"
 		errMsg := ""
 		if err != nil {
 			status = "error"
 			errMsg = err.Error()
 		}
-		_ = s.sessionMgr.Store().LogActivity(sessionID, toolName, latencyMs, status, errMsg)
+		_ = st.LogActivity(ctx, sessionID, toolName, latencyMs, status, errMsg)
 	}
 }
 
@@ -165,6 +172,26 @@ func (s *Server) registerTools() {
 		Name:        "colab_spawn_secondary_kernel",
 		Description: "Spawns a secondary Python kernel on the Colab VM to run parallel jobs on the Tesla GPU.",
 	}, s.colabSpawnSecondaryKernel)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_connect_runtime",
+		Description: "Connects to a hosted Google Colab runtime container automatically and waits until the VM is allocated.",
+	}, s.colabConnectRuntime)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_disconnect_runtime",
+		Description: "Powerwashes and releases the active Colab VM instance to terminate compute unit consumption.",
+	}, s.colabDisconnectRuntime)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_available_accelerators",
+		Description: "Inspects Colab runtime settings to dynamically return all available hardware accelerators (CPU, T4, L4, A100, TPU) and their plan availability (enabled/disabled).",
+	}, s.colabGetAvailableAccelerators)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_set_accelerator",
+		Description: "Configures the hardware accelerator (e.g. 'GPU,T4', 'GPU,A100', 'TPU,V6E1') and High-RAM option for the notebook session.",
+	}, s.colabSetAccelerator)
 
 	// Group 3 — Hardware & Environment Telemetry
 	mcp.AddTool(s.mcp, &mcp.Tool{
@@ -243,6 +270,21 @@ func (s *Server) registerTools() {
 		Name:        "colab_get_cell_with_lines",
 		Description: "Returns a cell's source code annotated with line numbers for reference.",
 	}, s.colabGetCellWithLines)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_get_running_cells",
+		Description: "Inspects all cells in the notebook in real time and returns active execution status, elapsed execution time in seconds, and live streaming stdout logs.",
+	}, s.colabGetRunningCells)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_run_all_cells",
+		Description: "Triggers sequential execution of all cells in the connected notebook.",
+	}, s.colabRunAllCells)
+
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name:        "colab_save_notebook",
+		Description: "Commits all cell code modifications, outputs, and revision checkpoints directly to Google Drive (exact equivalent of Ctrl+S).",
+	}, s.colabSaveNotebook)
 
 	// Group 6 — Reverse Proxy Router
 	mcp.AddTool(s.mcp, &mcp.Tool{

@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestStoreOperations(t *testing.T) {
+	ctx := context.Background()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
@@ -27,16 +29,16 @@ func TestStoreOperations(t *testing.T) {
 		CDPPort:     9222,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := st.CreateProfile(p); err != nil {
+	if err := st.CreateProfile(ctx, p); err != nil {
 		t.Fatalf("failed to create profile: %v", err)
 	}
 
-	gotP, err := st.GetProfile("prof-1")
+	gotP, err := st.GetProfile(ctx, "prof-1")
 	if err != nil || gotP.Name != "Test Profile" {
 		t.Fatalf("unexpected profile: %+v, err: %v", gotP, err)
 	}
 
-	nextPort, err := st.GetNextAvailableCDPPort(9222)
+	nextPort, err := st.GetNextAvailableCDPPort(ctx, 9222)
 	if err != nil || nextPort != 9223 {
 		t.Fatalf("expected next port 9223, got %d (err: %v)", nextPort, err)
 	}
@@ -50,21 +52,21 @@ func TestStoreOperations(t *testing.T) {
 		IsActive:    true,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := st.SaveSession(s); err != nil {
+	if err := st.SaveSession(ctx, s); err != nil {
 		t.Fatalf("failed to save session: %v", err)
 	}
 
-	active, err := st.GetActiveSession()
+	active, err := st.GetActiveSession(ctx)
 	if err != nil || active.ID != "sess-1" {
 		t.Fatalf("unexpected active session: %+v, err: %v", active, err)
 	}
 
 	// 3. Activity logging
-	if err := st.LogActivity("sess-1", "colab_read_file", 25, "success", ""); err != nil {
+	if err := st.LogActivity(ctx, "sess-1", "colab_read_file", 25, "success", ""); err != nil {
 		t.Fatalf("failed to log activity: %v", err)
 	}
 
-	logs, err := st.ListRecentActivity(10)
+	logs, err := st.ListRecentActivity(ctx, 10)
 	if err != nil || len(logs) == 0 {
 		t.Fatalf("expected at least 1 log, got %d (err: %v)", len(logs), err)
 	}

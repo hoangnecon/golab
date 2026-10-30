@@ -15,7 +15,7 @@ func (s *Server) colabGetNotebookOutline(ctx context.Context, req *mcp.CallToolR
 	}
 	outline, err := svcs.Notebook.GetNotebookOutline(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_get_notebook_outline", latency, err)
+	s.logActivity(ctx, sessID, "colab_get_notebook_outline", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -38,7 +38,7 @@ func (s *Server) colabGetCells(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	cells, err := svcs.Notebook.GetCells(ctx, input.StartIndex, input.EndIndex, input.IncludeOutputs)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_get_cells", latency, err)
+	s.logActivity(ctx, sessID, "colab_get_cells", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -66,7 +66,7 @@ func (s *Server) colabAddCell(ctx context.Context, req *mcp.CallToolRequest, inp
 		cellID, err = svcs.Notebook.AddCodeCell(ctx, input.Index, input.Content)
 	}
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_add_cell", latency, err)
+	s.logActivity(ctx, sessID, "colab_add_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -90,7 +90,7 @@ func (s *Server) colabEditCellLines(ctx context.Context, req *mcp.CallToolReques
 	}
 	res, err := svcs.Notebook.EditCellLines(ctx, input.CellID, input.StartLine, input.EndLine, input.NewContent)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_edit_cell_lines", latency, err)
+	s.logActivity(ctx, sessID, "colab_edit_cell_lines", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -112,7 +112,7 @@ func (s *Server) colabUpdateCell(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	err = svcs.Notebook.UpdateCell(ctx, input.CellID, input.Content)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_update_cell", latency, err)
+	s.logActivity(ctx, sessID, "colab_update_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -133,7 +133,7 @@ func (s *Server) colabDeleteCell(ctx context.Context, req *mcp.CallToolRequest, 
 	}
 	err = svcs.Notebook.DeleteCell(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_delete_cell", latency, err)
+	s.logActivity(ctx, sessID, "colab_delete_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -155,7 +155,7 @@ func (s *Server) colabMoveCell(ctx context.Context, req *mcp.CallToolRequest, in
 	}
 	err = svcs.Notebook.MoveCell(ctx, input.CellID, input.NewIndex)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_move_cell", latency, err)
+	s.logActivity(ctx, sessID, "colab_move_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -170,7 +170,7 @@ func (s *Server) colabRunCodeCell(ctx context.Context, req *mcp.CallToolRequest,
 	}
 	rawOutput, err := svcs.Notebook.RunCodeCell(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_run_code_cell", latency, err)
+	s.logActivity(ctx, sessID, "colab_run_code_cell", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -185,9 +185,67 @@ func (s *Server) colabGetCellWithLines(ctx context.Context, req *mcp.CallToolReq
 	}
 	res, err := svcs.Notebook.GetCellWithLines(ctx, input.CellID)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_get_cell_with_lines", latency, err)
+	s.logActivity(ctx, sessID, "colab_get_cell_with_lines", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
 	return successResult(res, latency, "")
+}
+
+type GetRunningCellsInput struct {
+	SessionID  string `json:"session_id,omitempty"`
+	OnlyActive bool   `json:"only_active,omitempty"`
+}
+
+func (s *Server) colabGetRunningCells(ctx context.Context, req *mcp.CallToolRequest, input GetRunningCellsInput) (*mcp.CallToolResult, any, error) {
+	start := time.Now()
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	report, err := svcs.Notebook.GetRunningCells(ctx, input.OnlyActive)
+	latency := time.Since(start).Milliseconds()
+	s.logActivity(ctx, sessID, "colab_get_running_cells", latency, err)
+	if err != nil {
+		return errorResult(err, latency)
+	}
+	return successResult(report, latency, "")
+}
+
+type RunAllCellsInput struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+func (s *Server) colabRunAllCells(ctx context.Context, req *mcp.CallToolRequest, input RunAllCellsInput) (*mcp.CallToolResult, any, error) {
+	start := time.Now()
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	err = svcs.Notebook.RunAll(ctx)
+	latency := time.Since(start).Milliseconds()
+	s.logActivity(ctx, sessID, "colab_run_all_cells", latency, err)
+	if err != nil {
+		return errorResult(err, latency)
+	}
+	return successResult(map[string]any{"triggered": true, "message": "All notebook cells scheduled for execution"}, latency, "")
+}
+
+type SaveNotebookInput struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+func (s *Server) colabSaveNotebook(ctx context.Context, req *mcp.CallToolRequest, input SaveNotebookInput) (*mcp.CallToolResult, any, error) {
+	start := time.Now()
+	svcs, sessID, err := s.getServices(ctx, input.SessionID)
+	if err != nil {
+		return errorResult(err, 0)
+	}
+	err = svcs.Notebook.SaveNotebook(ctx)
+	latency := time.Since(start).Milliseconds()
+	s.logActivity(ctx, sessID, "colab_save_notebook", latency, err)
+	if err != nil {
+		return errorResult(err, latency)
+	}
+	return successResult(map[string]any{"saved": true, "message": "Notebook changes and outputs saved to Google Drive (Ctrl+S equivalent)."}, latency, "")
 }

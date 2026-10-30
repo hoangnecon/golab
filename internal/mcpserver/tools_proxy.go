@@ -24,7 +24,7 @@ func (s *Server) colabProxyForward(ctx context.Context, req *mcp.CallToolRequest
 	}
 	resp, err := svcs.Proxy.ProxyForward(ctx, input.Port, input.Subpath, input.Method, nil, input.Body)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_proxy_forward", latency, err)
+	s.logActivity(ctx, sessID, "colab_proxy_forward", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

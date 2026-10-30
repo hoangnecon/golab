@@ -58,7 +58,7 @@ func main() {
 	defer st.Close()
 
 	// Seed default profile if empty
-	profiles, _ := st.ListProfiles()
+	profiles, _ := st.ListProfiles(ctx)
 	if len(profiles) == 0 {
 		home, _ := os.UserHomeDir()
 		defaultProfile := &store.Profile{
@@ -69,7 +69,7 @@ func main() {
 			CDPPort:      9222,
 			CreatedAt:    time.Now().UTC(),
 		}
-		_ = st.CreateProfile(defaultProfile)
+		_ = st.CreateProfile(ctx, defaultProfile)
 	}
 
 	// 2. Initialize Process and Session Supervisors

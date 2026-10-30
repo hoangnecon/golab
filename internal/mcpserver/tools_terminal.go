@@ -15,7 +15,7 @@ func (s *Server) colabListTerminals(ctx context.Context, req *mcp.CallToolReques
 	}
 	list, err := svcs.Terminal.ListTerminals(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_list_terminals", latency, err)
+	s.logActivity(ctx, sessID, "colab_list_terminals", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -30,7 +30,7 @@ func (s *Server) colabCreateTerminal(ctx context.Context, req *mcp.CallToolReque
 	}
 	info, err := svcs.Terminal.CreateTerminal(ctx)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_create_terminal", latency, err)
+	s.logActivity(ctx, sessID, "colab_create_terminal", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}
@@ -51,7 +51,7 @@ func (s *Server) colabDeleteTerminal(ctx context.Context, req *mcp.CallToolReque
 	}
 	err = svcs.Terminal.DeleteTerminal(ctx, input.Name)
 	latency := time.Since(start).Milliseconds()
-	s.logActivity(sessID, "colab_delete_terminal", latency, err)
+	s.logActivity(ctx, sessID, "colab_delete_terminal", latency, err)
 	if err != nil {
 		return errorResult(err, latency)
 	}

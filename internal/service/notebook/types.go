@@ -33,3 +33,20 @@ type EditLinesResult struct {
 	LinesChanged int    `json:"lines_changed"`
 	TotalLines   int    `json:"total_lines"`
 }
+
+// RunningCellInfo represents the execution state and live logs of a cell.
+type RunningCellInfo struct {
+	Index          int     `json:"index"`
+	CellID         string  `json:"cell_id"`
+	IsRunning      bool    `json:"is_running"`
+	ElapsedSeconds float64 `json:"elapsed_seconds"`
+	ExecutionCount string  `json:"execution_count"`
+	Stdout         string  `json:"stdout"`
+}
+
+// RunningCellsReport provides an overview of currently executing cells.
+type RunningCellsReport struct {
+	HasRunningCells bool              `json:"has_running_cells"`
+	TotalRunning    int               `json:"total_running"`
+	RunningCells    []RunningCellInfo `json:"running_cells"`
+}

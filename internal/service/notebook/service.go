@@ -255,3 +255,43 @@ func (s *Service) GetNotebookOutline(ctx context.Context) (*NotebookOutline, err
 		Outline:       outline,
 	}, nil
 }
+
+// GetRunningCells inspects all cells in the notebook and returns execution state and live logs.
+func (s *Service) GetRunningCells(ctx context.Context, onlyActive bool) (*RunningCellsReport, error) {
+	raw, err := s.exec.GetRunningCells(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get running cells: %w", err)
+	}
+
+	var list []RunningCellInfo
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("unmarshal running cells: %w", err)
+	}
+
+	running := make([]RunningCellInfo, 0, len(list))
+	activeCount := 0
+	for _, c := range list {
+		if c.IsRunning {
+			activeCount++
+			running = append(running, c)
+		} else if !onlyActive && c.Stdout != "" {
+			running = append(running, c)
+		}
+	}
+
+	return &RunningCellsReport{
+		HasRunningCells: activeCount > 0,
+		TotalRunning:    activeCount,
+		RunningCells:    running,
+	}, nil
+}
+
+// RunAll executes all cells in the notebook sequentially.
+func (s *Service) RunAll(ctx context.Context) error {
+	return s.exec.RunAll(ctx)
+}
+
+// SaveNotebook commits all notebook modifications and cell outputs to Google Drive (Ctrl+S equivalent).
+func (s *Service) SaveNotebook(ctx context.Context) error {
+	return s.exec.SaveNotebook(ctx)
+}

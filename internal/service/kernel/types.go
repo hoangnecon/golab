@@ -27,3 +27,17 @@ type KernelStatusReport struct {
 	AllKernels     []KernelDetail `json:"all_kernels"`
 	TotalKernels   int           `json:"total_kernels"`
 }
+
+// AcceleratorOption represents a hardware accelerator option (GPU/TPU/CPU).
+type AcceleratorOption struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Checked  bool   `json:"checked"`
+	Disabled bool   `json:"disabled"`
+}
+
+// RuntimeConfigReport details the available and active runtime hardware.
+type RuntimeConfigReport struct {
+	Accelerators []AcceleratorOption `json:"accelerators"`
+	HighRAM      bool                `json:"high_ram"`
+}

@@ -176,3 +176,32 @@ func (s *Service) KillKernel(ctx context.Context, kernelID string) error {
 	}
 	return nil
 }
+
+// ConnectRuntime connects to a hosted Colab runtime container automatically.
+func (s *Service) ConnectRuntime(ctx context.Context) error {
+	return s.exec.ConnectRuntime(ctx)
+}
+
+// DisconnectRuntime terminates and releases the active Colab VM instance.
+func (s *Service) DisconnectRuntime(ctx context.Context) error {
+	return s.exec.DisconnectRuntime(ctx)
+}
+
+// GetAvailableAccelerators extracts the hardware accelerator options (GPU/TPU/CPU/RAM) from Colab runtime settings.
+func (s *Service) GetAvailableAccelerators(ctx context.Context) (*RuntimeConfigReport, error) {
+	raw, err := s.exec.GetAvailableAccelerators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get accelerators: %w", err)
+	}
+
+	var report RuntimeConfigReport
+	if err := json.Unmarshal(raw, &report); err != nil {
+		return nil, fmt.Errorf("unmarshal accelerators report: %w", err)
+	}
+	return &report, nil
+}
+
+// SetAccelerator selects a specific hardware accelerator and high-RAM configuration.
+func (s *Service) SetAccelerator(ctx context.Context, value string, highRAM bool) error {
+	return s.exec.SetAccelerator(ctx, value, highRAM)
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoangnecon/golab/internal/bridge"
+	"github.com/hoangnecon/golab/internal/domain"
 	"github.com/hoangnecon/golab/internal/process"
 	"github.com/hoangnecon/golab/internal/service/kernel"
 	"github.com/hoangnecon/golab/internal/service/notebook"
@@ -73,13 +74,22 @@ func (m *Manager) ResolveSession(ctx context.Context, sessionID string) (*Active
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check Session Lock guardrail
+	lockedSess, _ := m.store.GetLockedSession(ctx)
+	if lockedSess != nil {
+		if sessionID != "" && sessionID != lockedSess.ID {
+			return nil, fmt.Errorf("session guardrail active: session %q is locked as exclusive worktree. Operations on session %q are blocked", lockedSess.ID, sessionID)
+		}
+		sessionID = lockedSess.ID
+	}
+
 	// 1. If explicit sessionID requested, look up in active map
 	if sessionID != "" {
 		if sess, ok := m.active[sessionID]; ok {
 			return sess, nil
 		}
 		// Try to revive from store
-		dbSess, err := m.store.GetSession(sessionID)
+		dbSess, err := m.store.GetSession(ctx, sessionID)
 		if err == nil && dbSess != nil {
 			act, errAttach := m.attachLocked(ctx, dbSess)
 			if errAttach == nil {
@@ -90,7 +100,7 @@ func (m *Manager) ResolveSession(ctx context.Context, sessionID string) (*Active
 	}
 
 	// 2. If no sessionID given, try to find active session in store
-	dbSess, err := m.store.GetActiveSession()
+	dbSess, err := m.store.GetActiveSession(ctx)
 	if err == nil && dbSess != nil {
 		if act, ok := m.active[dbSess.ID]; ok {
 			return act, nil
@@ -131,7 +141,7 @@ func (m *Manager) ResolveSession(ctx context.Context, sessionID string) (*Active
 			IsActive:    true,
 			CreatedAt:   time.Now().UTC(),
 		}
-		_ = m.store.SaveSession(sessRecord)
+		_ = m.store.SaveSession(ctx, sessRecord)
 
 		act := &ActiveSession{
 			Session:   sessRecord,
@@ -159,7 +169,7 @@ func createDomainServices(exec *bridge.ColabExecutor) *DomainServices {
 }
 
 func (m *Manager) attachLocked(ctx context.Context, dbSess *store.Session) (*ActiveSession, error) {
-	p, err := m.store.GetProfile(dbSess.ProfileID)
+	p, err := m.store.GetProfile(ctx, dbSess.ProfileID)
 	if err != nil {
 		return nil, fmt.Errorf("profile not found: %w", err)
 	}
@@ -197,7 +207,7 @@ func (m *Manager) OpenNotebook(ctx context.Context, profileID, notebookURL, name
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	p, err := m.store.GetProfile(profileID)
+	p, err := m.store.GetProfile(ctx, profileID)
 	if err != nil {
 		return nil, fmt.Errorf("profile %q: %w", profileID, err)
 	}
@@ -240,18 +250,36 @@ func (m *Manager) OpenNotebook(ctx context.Context, profileID, notebookURL, name
 		name = extractNotebookName(notebookURL)
 	}
 
-	sessRecord := &store.Session{
-		ID:          sessID,
-		Name:        name,
-		ProfileID:   profileID,
-		NotebookURL: notebookURL,
-		TabID:       target.ID,
-		IsActive:    true,
-		CreatedAt:   time.Now().UTC(),
+	projectID := ""
+	ownerProfileID := profileID
+	if proj, errProj := m.store.GetProjectByURL(ctx, notebookURL); errProj == nil && proj != nil {
+		projectID = proj.ID
+		ownerProfileID = proj.OwnerProfileID
 	}
 
-	_ = m.store.SetActiveSession(sessID)
-	_ = m.store.SaveSession(sessRecord)
+	permission := domain.PermissionEdit
+	titleLower := strings.ToLower(target.Title)
+	if strings.Contains(titleLower, "từ chối") || strings.Contains(titleLower, "denied") {
+		permission = domain.PermissionDenied
+	} else if strings.Contains(titleLower, "playground") || strings.Contains(titleLower, "view only") {
+		permission = domain.PermissionView
+	}
+
+	sessRecord := &store.Session{
+		ID:             sessID,
+		Name:           name,
+		ProfileID:      profileID,
+		ProjectID:      projectID,
+		OwnerProfileID: ownerProfileID,
+		NotebookURL:    notebookURL,
+		TabID:          target.ID,
+		IsActive:       true,
+		Permission:     permission,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	_ = m.store.SetActiveSession(ctx, sessID)
+	_ = m.store.SaveSession(ctx, sessRecord)
 
 	exec := bridge.NewColabExecutor(cdp)
 	svcs := createDomainServices(exec)
@@ -298,12 +326,12 @@ func (m *Manager) CloseSession(ctx context.Context, sessionID string) error {
 		delete(m.active, sessionID)
 	}
 
-	return m.store.DeleteSession(sessionID)
+	return m.store.DeleteSession(ctx, sessionID)
 }
 
 // ListLiveSessions returns all registered sessions with real-time hardware and kernel status.
 func (m *Manager) ListLiveSessions(ctx context.Context) ([]*store.Session, error) {
-	sessions, err := m.store.ListSessions()
+	sessions, err := m.store.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}

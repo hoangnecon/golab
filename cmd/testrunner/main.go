@@ -96,6 +96,18 @@ func main() {
 		return nil
 	})
 
+	runTest("kernel.GetAvailableAccelerators", func() error {
+		report, err := kernelSvc.GetAvailableAccelerators(ctx)
+		if err != nil {
+			return err
+		}
+		if len(report.Accelerators) == 0 {
+			return fmt.Errorf("no accelerators returned")
+		}
+		fmt.Printf("   Available accelerators found: %d options\n", len(report.Accelerators))
+		return nil
+	})
+
 	// 2. Hardware Telemetry
 	fmt.Println("\n--- Testing Hardware & Environment Telemetry Service ---")
 	runTest("telemetry.GetHardwareTelemetry", func() error {
@@ -208,6 +220,15 @@ func main() {
 		if len(cells) == 0 {
 			return fmt.Errorf("expected at least 1 cell")
 		}
+		return nil
+	})
+
+	runTest("notebook.GetRunningCells", func() error {
+		report, err := notebookSvc.GetRunningCells(ctx, false)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("   Running cells check: has_running=%t, total=%d\n", report.HasRunningCells, report.TotalRunning)
 		return nil
 	})
 

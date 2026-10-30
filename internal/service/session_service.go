@@ -30,7 +30,7 @@ func (s *SessionService) CloseSession(ctx context.Context, sessionID string) err
 }
 
 func (s *SessionService) SetActiveSession(ctx context.Context, sessionID string) error {
-	return s.mgr.Store().SetActiveSession(sessionID)
+	return s.mgr.Store().SetActiveSession(ctx, sessionID)
 }
 
 func (s *SessionService) FocusSession(ctx context.Context, sessionID string) error {
@@ -45,7 +45,7 @@ func (s *SessionService) FocusSession(ctx context.Context, sessionID string) err
 }
 
 func (s *SessionService) SetSessionLocked(ctx context.Context, sessionID string, locked bool) error {
-	return s.mgr.Store().SetSessionLocked(sessionID, locked)
+	return s.mgr.Store().SetSessionLocked(ctx, sessionID, locked)
 }
 
 func (s *SessionService) ConnectRuntime(ctx context.Context, sessionID string) error {

@@ -67,7 +67,7 @@ func toStoreProfile(p *domain.Profile) *store.Profile {
 		ID:           p.ID,
 		Name:         p.Name,
 		AccountEmail: p.AccountEmail,
-		Tier:         string(p.Tier),
+		Tier:         p.Tier,
 		UserDataDir:  p.UserDataDir,
 		CDPPort:      p.CDPPort,
 		IsRunning:    p.IsRunning,

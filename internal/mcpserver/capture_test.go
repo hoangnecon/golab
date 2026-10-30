@@ -97,7 +97,7 @@ func TestToolCallsAreRecordedWithPayloads(t *testing.T) {
 		t.Fatalf("call kernel status: %v", err)
 	}
 
-	list, err := st.ListRecentActivity(10)
+	list, err := st.ListRecentActivity(ctx, 10)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("want exactly 1 recorded call, got %d (err %v): %+v", len(list), err, list)
 	}
@@ -105,7 +105,7 @@ func TestToolCallsAreRecordedWithPayloads(t *testing.T) {
 		t.Fatalf("unexpected row: %+v", list[0])
 	}
 
-	d, err := st.GetActivity(list[0].ID)
+	d, err := st.GetActivity(ctx, list[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestLogActivityWithoutMiddlewareWritesDirectly(t *testing.T) {
 	srv := NewServerWithSessionManager(session.NewManager(st, nil))
 	srv.logActivity(context.Background(), "s1", "colab_read_file", 7, nil)
 
-	list, err := st.ListRecentActivity(10)
+	list, err := st.ListRecentActivity(context.Background(), 10)
 	if err != nil || len(list) != 1 || list[0].HasPayload || list[0].LatencyMs != 7 {
 		t.Fatalf("unexpected rows: %+v err=%v", list, err)
 	}

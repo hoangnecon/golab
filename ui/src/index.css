@@ -1,71 +1,81 @@
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* Google AI Studio / Material 3 Console Design Tokens */
   :root {
-    --bg-canvas: #09090b;
-    --bg-surface: #121215;
-    --bg-panel: #18181b;
-    --border-subtle: #27272a;
-    --text-primary: #f4f4f5;
-    --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
+    color-scheme: light dark;
+    --c-app: 248 249 250;
+    --c-canvas: 255 255 255;
+    --c-surface: 255 255 255;
+    --c-raised: 241 243 244;
+    --c-hover: 232 234 237;
+    --c-line: 218 220 224;
+    --c-line-strong: 189 193 198;
+    --c-fg: 32 33 36;
+    --c-muted: 95 99 104;
+    --c-subtle: 128 134 139;
+    --c-primary: 26 115 232;
+    --c-success: 30 142 62;
+    --c-warning: 249 171 0;
+    --c-danger: 217 48 37;
+    --c-purple: 147 51 234;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --c-app: 18 19 22;
+      --c-canvas: 24 25 29;
+      --c-surface: 30 31 36;
+      --c-raised: 37 38 44;
+      --c-hover: 45 46 54;
+      --c-line: 54 56 64;
+      --c-line-strong: 75 78 88;
+      --c-fg: 241 243 244;
+      --c-muted: 154 160 166;
+      --c-subtle: 112 117 122;
+      --c-primary: 138 180 248;
+      --c-success: 129 201 149;
+      --c-warning: 253 214 99;
+      --c-danger: 242 139 130;
+      --c-purple: 192 132 252;
+    }
   }
 
   html {
-    background-color: #09090b;
-    color: #f4f4f5;
-    color-scheme: dark;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    @apply bg-app;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--c-line-strong)) transparent;
   }
 
+  /* Never set a font size on html: rem units (all spacing) derive from it. */
   body {
-    margin: 0;
-    padding: 0;
-    overflow-x: hidden;
-    min-height: 100vh;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    @apply m-0 bg-app font-sans text-body text-fg antialiased;
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
   }
-}
 
-/* Custom thin scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
-@layer base {
-  body {
-    @apply bg-zinc-950 text-zinc-100;
+  ::selection {
+    background: rgb(var(--c-fg) / 0.2);
   }
-}
 
-/* Subtle custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #09090b;
-}
-::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-fg));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
 }

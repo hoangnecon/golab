@@ -2,7 +2,7 @@
 .agent/
 
 # Binaries
-golab
+/golab
 bin/
 
 # Docs
